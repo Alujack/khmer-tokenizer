@@ -1,0 +1,15 @@
+[package]
+name = "khmer-tokenizer-cli"
+description = "Command-line interface for the Khmer tokenizer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "khmer-tokenizer"
+path = "src/main.rs"
+
+[dependencies]
+khmer-tokenizer-core = { path = "../core" }

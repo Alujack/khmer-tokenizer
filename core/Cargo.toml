@@ -1,0 +1,15 @@
+[package]
+name = "khmer-tokenizer-core"
+description = "Fast, dependency-free Khmer word segmentation (syllable-aware longest match)."
+keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cambodia"]
+categories = ["text-processing", "internationalization"]
+readme = "../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "khmer_tokenizer_core"
+path = "src/lib.rs"

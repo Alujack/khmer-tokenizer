@@ -1,0 +1,133 @@
+# Seed dictionary for khmer-tokenizer-core.
+# One word per line. Blank lines and lines starting with '#' are ignored.
+# This is a small, hand-curated starter list of common words so the library
+# works out of the box. For production, replace it with a full lexicon
+# (see the "Dictionary" section of the README).
+
+# --- Greetings & courtesy ---
+សួស្តី
+អរគុណ
+សុខសប្បាយ
+លាហើយ
+
+# --- Pronouns ---
+ខ្ញុំ
+អ្នក
+គាត់
+យើង
+ពួកគេ
+វា
+គេ
+ខ្លួន
+
+# --- Common words ---
+ទាំងអស់គ្នា
+គ្នា
+និង
+ឬ
+ប៉ុន្តែ
+ដែល
+នេះ
+នោះ
+អ្វី
+ណា
+ពេល
+ឥឡូវ
+
+# --- Verbs ---
+ស្រឡាញ់
+ចង់
+បាន
+មាន
+ទៅ
+មក
+នៅ
+ធ្វើ
+ញ៉ាំ
+ផឹក
+និយាយ
+ស្តាប់
+មើល
+អាន
+សរសេរ
+រៀន
+ដឹង
+យល់
+ចេះ
+
+# --- Adjectives ---
+ល្អ
+ស្អាត
+ធំ
+តូច
+ច្រើន
+តិច
+ថ្មី
+ចាស់
+
+# --- Places & nation ---
+កម្ពុជា
+ប្រទេស
+ភ្នំពេញ
+ផ្ទះ
+សាលា
+ទីក្រុង
+ភូមិ
+
+# --- Language ---
+ភាសា
+ខ្មែរ
+អង់គ្លេស
+ពាក្យ
+
+# --- People ---
+មនុស្ស
+សិស្ស
+គ្រូ
+កុមារ
+មិត្ត
+គ្រួសារ
+
+# --- Time ---
+ថ្ងៃ
+ខែ
+ឆ្នាំ
+ម៉ោង
+ព្រឹក
+ល្ងាច
+យប់
+
+# --- Nature & things ---
+ទឹក
+បាយ
+សត្វ
+ដើមឈើ
+ផ្កា
+ផ្លូវ
+រថយន្ត
+
+# --- Technology ---
+កុំព្យូទ័រ
+ទូរស័ព្ទ
+អ៊ីនធឺណិត
+បច្ចេកវិទ្យា
+កម្មវិធី
+ទិន្នន័យ
+
+# --- Work & money ---
+ការងារ
+លុយ
+ទីផ្សារ
+ក្រុមហ៊ុន
+
+# --- Numbers ---
+មួយ
+ពីរ
+បី
+បួន
+ប្រាំ
+ប្រាំមួយ
+ប្រាំពីរ
+ប្រាំបី
+ប្រាំបួន
+ដប់

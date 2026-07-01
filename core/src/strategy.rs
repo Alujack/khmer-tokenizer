@@ -15,4 +15,12 @@ pub enum Strategy {
     /// forward result. The canonical tie-break from Bi & Taing (APSIPA
     /// 2014); see `docs/RESEARCH-2.md` §3b.
     BiMaxMatch,
+    /// Unigram max-probability path (jieba-style): builds a DAG of every
+    /// dictionary match over the cluster run, then dynamic-programs
+    /// right-to-left for the path with the highest cumulative
+    /// log-probability, using word frequencies set with
+    /// [`KhmerTokenizer::with_frequencies`](crate::KhmerTokenizer::with_frequencies).
+    /// Falls back to [`Strategy::ForwardMaxMatch`] if no frequencies were
+    /// set — there's nothing to score without them.
+    UnigramDp,
 }

@@ -24,13 +24,20 @@ Segmentation runs in two passes:
    splits *inside* an orthographic syllable — the classic bug in naive Khmer
    tokenizers.
 2. **Boundary pass** — a trie keyed on whole clusters is walked to place word
-   boundaries, using one of two [`Strategy`](core/src/strategy.rs) algorithms:
+   boundaries, using one of three [`Strategy`](core/src/strategy.rs) algorithms:
    - `ForwardMaxMatch` (default) — greedy longest-match, left to right: at
      each position, consume the longest run of clusters that forms a
      dictionary word. Falls back to a single cluster when nothing matches.
    - `BiMaxMatch` — also runs backward max-match and picks between them on
      disagreement (fewer tokens wins, then fewer single-cluster tokens);
-     measurably more accurate — see [BENCHMARKS.md](docs/BENCHMARKS.md).
+     measurably more accurate than the default.
+   - `UnigramDp` — builds a DAG of every dictionary match (not just the
+     longest) and dynamic-programs the highest-probability path using word
+     frequencies you supply via `with_frequencies(...)`. The most accurate of
+     the three by a clear margin — see [BENCHMARKS.md](docs/BENCHMARKS.md) —
+     but needs a frequency table; **none ships with this crate** (see
+     "Dictionary" below for why). Falls back to `ForwardMaxMatch` if none is
+     set.
 
    Either way, runs of non-Khmer text (Latin, digits, punctuation) become
    their own tokens, and whitespace separates tokens without producing one.
@@ -69,6 +76,12 @@ assert_eq!(tk.segment("ភាសាខ្មែរ"), vec!["ភាសា", "ខ�
 // ...or a different strategy (see "How it works" above).
 use khmer_tokenizer_core::Strategy;
 let tk = KhmerTokenizer::with_default_dict().with_strategy(Strategy::BiMaxMatch);
+
+// UnigramDp needs your own word frequencies (word -> count).
+let freqs = [("ភាសា".to_string(), 500), ("ខ្មែរ".to_string(), 800)];
+let tk = KhmerTokenizer::with_default_dict()
+    .with_strategy(Strategy::UnigramDp)
+    .with_frequencies(freqs);
 
 // Need just the orthographic clusters?
 use khmer_tokenizer_core::split_kcc;
@@ -123,9 +136,11 @@ To use your own lexicon instead:
 cargo test
 ```
 
-Covers KCC splitting (subscripts and vowels stay attached), both segmentation
-strategies (forward + bidirectional max-match), mixed Khmer/Latin/number
-input, the out-of-vocabulary fallback, and dictionary loading.
+Covers KCC splitting (subscripts and vowels stay attached), all three
+segmentation strategies (forward max-match, bidirectional max-match, and
+unigram DP — including a hand-built case where only DP-based scoring can
+reach the correct segmentation), mixed Khmer/Latin/number input, the
+out-of-vocabulary fallback, and dictionary loading.
 
 ## Roadmap
 
@@ -136,11 +151,16 @@ Designed so these slot in without restructuring the workspace:
 - **Python bindings** — a `py/` crate using PyO3 so it drops into existing
   `khnlp`-style pipelines.
 - **Benchmarks** — a Criterion suite to track throughput.
-- **Scored segmentation (`UnigramDp`)** — frequency-weighted DP over the match
-  DAG (jieba-style) for better disambiguation on hard cases; blocked on
-  sourcing word frequencies under a bundleable license (see
-  [docs/ROADMAP.md](docs/ROADMAP.md) Phase 3). `BiMaxMatch` (bidirectional
-  max-match) already ships as a cheaper accuracy bump — see "How it works".
+- **A bundleable frequency table** for `UnigramDp` — no commercially-clean,
+  bundleable corpus-frequency source has been found yet (see
+  [docs/ROADMAP.md](docs/ROADMAP.md) Phase 3); until then, callers supply
+  their own via `with_frequencies(...)`.
+- **CLI support for `UnigramDp`** — the CLI has no mechanism yet to load an
+  external frequency file, so `--strategy` only exposes `fmm`/`bimm`.
+- **HMM/Viterbi fallback for OOV runs** (Phase 4) — `UnigramDp`'s frequency
+  scoring disambiguates between competing dictionary matches, but doesn't
+  help clusters the dictionary has zero matches for at all (R-oov is flat at
+  ~0.35 across all three strategies — see `docs/BENCHMARKS.md`).
 
 ## License
 

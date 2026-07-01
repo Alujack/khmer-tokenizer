@@ -20,18 +20,24 @@ pub struct Example {
     pub gold_tokens: Vec<String>,
 }
 
-/// Which khPOS held-out split to load.
+/// Which khPOS split to load.
 #[derive(Clone, Copy)]
 pub enum Split {
     OpenTest,
     CloseTest,
+    /// The full 12,000-sentence training corpus. Confirmed (by exact-line
+    /// overlap) disjoint from `OpenTest` (11/1000 incidental matches) but
+    /// **fully contained in `CloseTest`** (1000/1000) — never evaluate
+    /// against `CloseTest` using anything derived from this split.
+    Train,
 }
 
 impl Split {
-    fn filename(self) -> &'static str {
+    fn relative_path(self) -> &'static str {
         match self {
             Split::OpenTest => "OPEN-TEST.word",
             Split::CloseTest => "CLOSE-TEST.word",
+            Split::Train => "before-replace/train6.word",
         }
     }
 }
@@ -58,7 +64,7 @@ pub fn parse_khpos(raw: &str) -> Vec<Example> {
 pub fn load_khpos_dir(repo_dir: &Path, split: Split) -> io::Result<Vec<Example>> {
     let path = repo_dir
         .join("corpus-draft-ver-1.0/data")
-        .join(split.filename());
+        .join(split.relative_path());
     let raw = fs::read_to_string(path)?;
     Ok(parse_khpos(&raw))
 }

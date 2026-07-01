@@ -14,7 +14,7 @@ use std::path::Path;
 
 use khmer_tokenizer_core::{KhmerTokenizer, Strategy};
 use khmer_tokenizer_eval::corpus::{self, Split};
-use khmer_tokenizer_eval::evaluate;
+use khmer_tokenizer_eval::{count_frequencies, evaluate};
 
 fn main() {
     match std::env::args().nth(1).as_deref() {
@@ -51,6 +51,22 @@ fn run_eval() {
         let metrics = evaluate(&examples, &tokenizer);
         report::print_table(label, &metrics);
     }
+
+    // UnigramDp needs frequencies. khPOS is CC BY-NC-SA, so these are
+    // computed here for local evaluation only — never bundled or shipped
+    // (see ATTRIBUTION.md and docs/ROADMAP.md Phase 3). Split::Train is
+    // confirmed disjoint from OpenTest, so this doesn't leak the eval set.
+    let train_examples = corpus::load_khpos_dir(&repo_dir, Split::Train).unwrap_or_else(|e| {
+        eprintln!("error: could not read khPOS train split: {e}");
+        std::process::exit(1);
+    });
+    let freqs = count_frequencies(&train_examples);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_strategy(Strategy::UnigramDp)
+        .with_frequencies(freqs);
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("UnigramDp (freq: khPOS train, local-only)", &metrics);
 }
 
 fn run_prepare_dict() {

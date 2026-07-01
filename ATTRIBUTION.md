@@ -43,5 +43,16 @@ no words added, removed, or edited.
 evaluated as an alternative — see `docs/RESEARCH-2.md` §1e. It is **gated**
 on HuggingFace (requires an authenticated, terms-accepted account) and ships
 only as Parquet, so it isn't wired into the automated `prepare-dict` pipeline.
-It remains a candidate frequency-table source for Phase 3 if a Hugging Face
-access token is provided.
+It remains a candidate bundleable frequency-table source if a Hugging Face
+access token ever becomes available.
+
+## Word frequencies (`Strategy::UnigramDp`) — not bundled, evaluation-only
+
+`cargo xtask eval` counts word frequencies from khPOS's
+`before-replace/train6.word` split (12,000 sentences, **CC BY-NC-SA 4.0**) to
+benchmark `Strategy::UnigramDp` against the other strategies (see
+`docs/BENCHMARKS.md`). This count table is computed **at eval time only** —
+it is never written to a committed file, bundled in `core/src/dict.txt`, or
+shipped in any binary. Production use of `UnigramDp` requires supplying your
+own frequency table via `KhmerTokenizer::with_frequencies(...)`, sourced
+under a license appropriate to your use case.

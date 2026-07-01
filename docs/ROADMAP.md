@@ -5,12 +5,12 @@ rule: **no accuracy change lands without a before/after number from the harness.
 Background and citations: [RESEARCH.md](./RESEARCH.md).
 
 Current default: forward maximum-matching over a Khmer-Character-Cluster trie,
-with the 59,526-word dictionary from Phase 2. A `Strategy::BiMaxMatch` option
-now also exists (Phase 3, partial) and measures slightly better — see
-[BENCHMARKS.md](./BENCHMARKS.md) (FMM: F1 0.7216, R-iv 0.8144; BiMM: F1
-0.7255, R-iv 0.8184 — against khPOS OPEN-TEST). FMM stays the *default*
-(determinism/speed, per the decision below) until `UnigramDp` lands and the
-three can be compared properly.
+with the 59,526-word dictionary from Phase 2. `Strategy::BiMaxMatch` and
+`Strategy::UnigramDp` also exist (Phase 3, done) — see
+[BENCHMARKS.md](./BENCHMARKS.md) (FMM: F1 0.7216; BiMM: F1 0.7255; UnigramDp:
+F1 0.7661, all against khPOS OPEN-TEST). `UnigramDp` is the clear winner when
+frequencies are available, but the crate ships none by default (see Phase 3
+below), so `ForwardMaxMatch` stays the enum's `#[default]`.
 
 ---
 
@@ -67,42 +67,58 @@ three can be compared properly.
 *Exit criteria:* F1 improvement from dictionary coverage is quantified. **Met**
 — F1 0.2174 → 0.7216.
 
-## Phase 3 — Scored segmentation (the algorithmic upgrade) 🚧 partial
+## Phase 3 — Scored segmentation (the algorithmic upgrade) ✅
 
 **Goal:** beat greedy longest-match on ambiguous input.
 
 - [x] Introduce a `Strategy` enum (`core/src/strategy.rs`): `ForwardMaxMatch`
-      (default, stays deterministic), `BiMaxMatch`. Selected via
-      `KhmerTokenizer::with_strategy(...)`; also exposed as `cli --strategy
-      fmm|bimm`.
+      (default, stays deterministic), `BiMaxMatch`, `UnigramDp`. Selected via
+      `KhmerTokenizer::with_strategy(...)`; FMM/BiMM also exposed as `cli
+      --strategy fmm|bimm` (`UnigramDp` isn't, since the CLI has no mechanism
+      yet to load an external frequency file — see the note below).
 - [x] Implement **bidirectional max-match** (`core/src/trie.rs`: `rev_root` +
       `backward_match` + `bimm`) as a cheap intermediate — forward + backward
       over the same cluster run; on disagreement, fewer tokens wins, then
       fewer single-cluster tokens, then forward (Bi & Taing, APSIPA 2014).
-- [ ] Implement **unigram max-probability path** (jieba-style): build a DAG of
-      dictionary matches over the cluster stream, then DP for the highest
-      log-probability path using word frequencies. **Still blocked on a
-      frequency source** — Phase 2 didn't produce one (see Phase 2 notes
-      above). Options: count frequencies from khPOS's *training* split (CC
-      BY-NC-SA — fine for local/non-bundled derivation, same constraint as
-      Phase 4's HMM), or revisit `khopilot/khmer-lexicon`'s bundled
-      `frequency` field if an HF token becomes available.
-- [x] Benchmarked FMM vs. BiMM on the harness (`docs/BENCHMARKS.md`): BiMM
-      wins on every metric except a negligible R-oov dip (F1 0.7216 →
-      0.7255). **Default stays `ForwardMaxMatch`** for now — the win is small
-      enough that determinism/simplicity wins until `UnigramDp` is in the mix
-      and a real three-way comparison can decide the default (per the
-      "Decisions to confirm" note below).
+- [x] Implement **unigram max-probability path** (jieba-style, `core/src/trie.rs`
+      `unigram_dp`): a DAG of every dictionary match starting at each
+      position (not just the longest — this is what lets it represent paths
+      neither greedy walk can reach), then right-to-left DP for the highest
+      cumulative log-probability path. OOV words get a floor count of 1
+      (penalized, not impossible). Frequencies are supplied via
+      `KhmerTokenizer::with_frequencies(...)` — **no table ships with the
+      crate**: no bundleable, commercially-clean corpus-frequency source was
+      found (see the Phase 2 licensing notes). Falls back to
+      `ForwardMaxMatch` if no frequencies are set.
+      **Frequency source used for evaluation:** word counts from khPOS's
+      `before-replace/train6.word` split (12,000 sentences, CC BY-NC-SA),
+      computed by `cargo xtask eval` **locally only** — never bundled,
+      committed, or shipped. Confirmed by exact-line overlap that this split
+      is effectively disjoint from `OPEN-TEST` (the eval set) but **100%
+      contained in `CLOSE-TEST`** — so `CLOSE-TEST` must never be used as an
+      eval set alongside these frequencies.
+- [x] Benchmarked all three on the harness (`docs/BENCHMARKS.md`): `UnigramDp`
+      wins decisively (F1 0.7216 → 0.7255 (BiMM) → **0.7661** (UnigramDp);
+      R-iv 0.8144 → 0.8184 → **0.8752**), confirming it as the expected bigger
+      lever over BiMM. **Default stays `ForwardMaxMatch`** — resolves the
+      "Decisions to confirm" item below: since no frequency table is bundled,
+      `UnigramDp` silently degrades to FMM for anyone who doesn't supply
+      their own, so changing the enum's nominal default wouldn't change any
+      out-of-the-box behavior. The actionable takeaway instead: use
+      `UnigramDp` with your own frequencies whenever you have them.
 
 *Exit criteria:* `UnigramDp` (or BiMM) shows a measured F1 gain over
-forward-MM. **Partially met** — BiMM's gain is measured and real, but small;
-`UnigramDp` (the expected bigger lever) awaits a frequency source.
+forward-MM. **Met** — both do; `UnigramDp`'s gain is the larger one, as
+predicted.
 
 ## Phase 4 — Unknown-word handling
 
 **Goal:** stop emitting one-cluster-per-token on out-of-vocabulary runs.
 
-- [ ] Measure current **R-oov** as the baseline (from Phase 1).
+- [x] Measure current **R-oov** as the baseline: ~0.35 and essentially flat
+      across FMM/BiMM/UnigramDp (0.3505 / 0.3493 / 0.3499 — see
+      `BENCHMARKS.md`). Confirms none of the Phase 3 strategies touch OOV
+      handling; this phase is the first one that will.
 - [ ] Add a lightweight cluster-level **HMM + Viterbi** (BMES states) for runs the
       dictionary misses, mirroring jieba's OOV layer. Train counts from a
       segmented corpus (document the NC-license constraint on shipping any
@@ -138,7 +154,7 @@ documented as on-by-default (with an opt-out).
 
 ```text
 khmerTokenizer/
-├── core/                 # engine (adds strategy.rs, normalize.rs, score.rs)
+├── core/                 # engine (strategy.rs + scoring built-in; normalize.rs remaining)
 ├── cli/                  # gains a --strategy flag
 ├── eval/                 # corpus loaders + P/R/F1 harness   (new)
 ├── xtask/                # download/prepare-dict/eval automation (new)

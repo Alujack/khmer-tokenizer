@@ -16,6 +16,7 @@ with a fully correct token sequence).
 | 2026-07-01 | ForwardMaxMatch | seed dict (~100 words)                    | 0.1576 | 0.3501 | 0.2174 | 0.9990 | 0.2047 | 0.0050   | khPOS OPEN-TEST |
 | 2026-07-01 | ForwardMaxMatch | chamkho khmerdict.txt (59,526 words)      | 0.7026 | 0.7417 | 0.7216 | 0.8144 | 0.3505 | 0.3650   | khPOS OPEN-TEST |
 | 2026-07-01 | BiMaxMatch      | chamkho khmerdict.txt (59,526 words)      | 0.7072 | 0.7449 | 0.7255 | 0.8184 | 0.3493 | 0.3650   | khPOS OPEN-TEST |
+| 2026-07-01 | UnigramDp       | chamkho khmerdict.txt + khPOS-train freqs | 0.7410 | 0.7929 | 0.7661 | 0.8752 | 0.3499 | 0.3770   | khPOS OPEN-TEST |
 
 ## Reading Phase 1's baseline (~100-word seed dict)
 
@@ -65,6 +66,36 @@ A small, real win, as expected for the "cheap intermediate" step:
   out-of-vocabulary clusters, so it can occasionally trade an OOV cluster's
   lucky fallback match for a better overall boundary.
 
-`UnigramDp` (frequency-scored DP over the match DAG) is still the expected
-bigger lever here — see `ROADMAP.md` Phase 3 for why it's not implemented yet
-(no frequency source survived Phase 2's licensing check).
+## Reading Phase 3's second result (UnigramDp) — the bigger lever, confirmed
+
+Frequency source: word counts from khPOS's `before-replace/train6.word` split
+(12,000 sentences, CC BY-NC-SA 4.0). **Computed and used locally by
+`cargo xtask eval` only — never bundled, committed, or shipped** (see
+`docs/ROADMAP.md` Phase 3 and `ATTRIBUTION.md`). Before trusting this as a
+fair comparison, confirmed by exact-line overlap that this training split is
+effectively disjoint from `OPEN-TEST` (11/1000 incidental matches — the eval
+set this table scores against) — it is, however, **100% contained in
+`CLOSE-TEST`**, so `CLOSE-TEST` must never be used as an eval set alongside
+these frequencies.
+
+- **F1 0.7216/0.7255 → 0.7661**, beating both FMM and BiMM by a wide margin —
+  confirms the roadmap's prediction that `UnigramDp` would be the bigger
+  lever, not `BiMaxMatch`.
+- **R-iv 0.8144/0.8184 → 0.8752**: real frequency data resolves a lot of the
+  longest-match ambiguity that a 59,526-word dictionary introduces — far more
+  than BiMM's structural tie-break could reach (BiMM can only choose between
+  the forward and backward greedy paths; `UnigramDp`'s DAG can represent and
+  score paths neither greedy walk can even produce).
+- **R-oov flat (~0.35 across all three):** frequency scoring disambiguates
+  between *competing dictionary matches* — it doesn't help clusters with zero
+  dictionary matches at all, which is what R-oov measures. Expected; that's
+  Phase 4's job (HMM/Viterbi fallback for OOV runs).
+
+**Default strategy decision (`ROADMAP.md`'s open item #3):** `Strategy`'s
+`#[default]` stays `ForwardMaxMatch`. Without a bundled frequency table (see
+`with_frequencies`'s doc comment for why none ships), `UnigramDp` silently
+falls back to `ForwardMaxMatch` anyway for anyone who doesn't supply their
+own — so changing the nominal default wouldn't change any out-of-the-box
+behavior. The real, actionable finding: **use `UnigramDp` with your own
+frequency table whenever you have one** — it's the best of the three by a
+clear margin.

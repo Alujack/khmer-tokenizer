@@ -32,13 +32,12 @@ model training later.
 | Tokenizer API    | `core/src/lib.rs`        | public entry point, dictionary loading       | ✅ built   |
 | CLI              | `cli/src/main.rs`        | run it from the terminal / pipes             | ✅ built   |
 | Normalizer       | `core/src/normalize.rs`  | canonicalize Unicode ordering variants       | 🔜 Phase 5 |
-| Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | 🚧 partial (FMM + BiMM built; UnigramDp pending a frequency source) |
-| Scorer           | `core/src/score.rs`      | frequency-based max-probability path         | 🔜 Phase 3 |
+| Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | ✅ built (FMM, BiMM, UnigramDp — see below) |
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
 | Bindings         | `wasm/`, `py/`         | run from JS/browser and Python               | 🔭 future  |
 
-## Today's segmentation pipeline
+## Today's default pipeline (`Strategy::ForwardMaxMatch`)
 
 ```mermaid
 flowchart LR
@@ -54,18 +53,17 @@ from the dictionary and, at each position, takes the longest run of clusters tha
 spells a real word. No match → it emits one cluster and moves on. Deterministic,
 no model, microsecond-fast.
 
-## Where it's going: the Strategy seam
+## The Strategy seam (built)
 
-The single most important design decision for the future is to put the
-boundary-choosing logic behind one interface, so the *how* can change while the
-*what* stays stable:
+The boundary-choosing logic sits behind one interface, so the *how* can
+change while the *what* stays stable:
 
 ```mermaid
 flowchart TB
     IN[clusters] --> S{Strategy}
-    S -->|today| FM[Forward max-match]
-    S -->|Phase 3| BM[Bidirectional max-match]
-    S -->|Phase 3| DP[Unigram max-probability path]
+    S -->|default| FM[Forward max-match]
+    S -->|BiMaxMatch| BM[Bidirectional max-match]
+    S -->|UnigramDp| DP[Unigram max-probability path]
     S -->|future| ML[Trained CRF / neural model]
     FM --> OUT[tokens]
     BM --> OUT
@@ -76,17 +74,29 @@ flowchart TB
 ```rust
 // The seam: callers never change, the engine behind it can.
 pub enum Strategy {
-    ForwardMaxMatch,   // built — default (determinism/speed)
-    BiMaxMatch,        // built — Phase 3, cheap accuracy bump (see BENCHMARKS.md)
-    // UnigramDp,       // Phase 3 (remaining) — frequency-scored; blocked on a frequency source
+    ForwardMaxMatch,   // default (determinism/speed) — always available
+    BiMaxMatch,        // cheap accuracy bump, no extra data needed
+    UnigramDp,         // best of the three, but needs KhmerTokenizer::with_frequencies(...) —
+                        // no frequency table ships with the crate (see BENCHMARKS.md Phase 3)
     // Model(Box<dyn Segmenter>) // future — a trained model, same API
 }
 ```
 
 A user who writes `tokenizer.segment(text)` doesn't need to change anything
 when switching strategies — `KhmerTokenizer::with_strategy(Strategy::BiMaxMatch)`
-chains onto any constructor, and the CLI exposes the same choice via
-`--strategy fmm|bimm`.
+chains onto any constructor, and the CLI exposes FMM/BiMM the same way via
+`--strategy fmm|bimm` (`UnigramDp` isn't CLI-exposed yet — no flag to load an
+external frequency file).
+
+`UnigramDp`'s DAG-plus-DP approach is a real algorithmic step up from the
+other two, not just a variant: `greedy_match` (used by both FMM and BiMM)
+only ever records the *longest* dictionary match at each trie-walk position,
+so neither can represent — let alone choose — a competing shorter match that
+leads to a better global path. `unigram_dp` records *every* match ending
+position as a DAG edge, then a right-to-left dynamic-programming pass over
+that DAG picks the path with the highest cumulative log-probability. That
+structural difference is why it measurably outperforms BiMM in
+`docs/BENCHMARKS.md`, not just a better tie-break rule.
 
 A user who writes `tokenizer.segment(text)` today keeps working when you later
 drop in a trained model. That stability is what lets you experiment freely.

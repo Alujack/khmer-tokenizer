@@ -27,6 +27,12 @@ pub struct KhmerTokenizer {
     rev_root: TrieNode,
     word_count: usize,
     strategy: Strategy,
+    /// Word frequencies for [`Strategy::UnigramDp`], set with
+    /// [`with_frequencies`](KhmerTokenizer::with_frequencies). Empty by
+    /// default — no frequency table ships with this crate (see the
+    /// dictionary notes in the project README for why).
+    freq_counts: HashMap<String, u64>,
+    freq_total: u64,
 }
 
 impl KhmerTokenizer {
@@ -67,6 +73,24 @@ impl KhmerTokenizer {
     /// ```
     pub fn with_strategy(mut self, strategy: Strategy) -> Self {
         self.strategy = strategy;
+        self
+    }
+
+    /// Supply word frequencies for [`Strategy::UnigramDp`]. Chains onto any
+    /// constructor. Without this, `UnigramDp` falls back to
+    /// [`Strategy::ForwardMaxMatch`] — there's nothing to score.
+    ///
+    /// This crate ships no default frequency table: a bundleable,
+    /// commercially-clean corpus-frequency source hasn't been found yet (see
+    /// `docs/ROADMAP.md` Phase 3). Callers must supply their own counts,
+    /// e.g. counted from a corpus they're licensed to use.
+    pub fn with_frequencies<I>(mut self, counts: I) -> Self
+    where
+        I: IntoIterator<Item = (String, u64)>,
+    {
+        let counts: HashMap<String, u64> = counts.into_iter().collect();
+        self.freq_total = counts.values().sum();
+        self.freq_counts = counts;
         self
     }
 
@@ -167,6 +191,10 @@ impl KhmerTokenizer {
             let run_tokens = match self.strategy {
                 Strategy::ForwardMaxMatch => forward_match(run, &self.root),
                 Strategy::BiMaxMatch => bimm(run, &self.root, &self.rev_root),
+                Strategy::UnigramDp if self.freq_total > 0 => {
+                    unigram_dp(run, &self.root, &self.freq_counts, self.freq_total)
+                }
+                Strategy::UnigramDp => forward_match(run, &self.root),
             };
             tokens.extend(run_tokens.into_iter().map(|cs| cs.concat()));
         }
@@ -253,6 +281,77 @@ fn bimm(clusters: &[String], root: &TrieNode, rev_root: &TrieNode) -> Vec<Vec<St
     }
 }
 
+/// Unigram max-probability path (jieba-style). Builds a DAG where `dag[k]`
+/// holds every end position reachable from `k` by a dictionary word starting
+/// there (or, if none match, a single-cluster fallback edge), then dynamic
+/// programs right-to-left for the path maximizing cumulative
+/// log-probability — computed in log-space to avoid floating-point
+/// underflow from multiplying many small fractions. OOV words (absent from
+/// `freq_counts`) get a floor count of 1 so they're penalized, not
+/// impossible. See `docs/RESEARCH-2.md` §3a.
+fn unigram_dp(
+    clusters: &[String],
+    root: &TrieNode,
+    freq_counts: &HashMap<String, u64>,
+    freq_total: u64,
+) -> Vec<Vec<String>> {
+    let n = clusters.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let mut dag: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (k, edges) in dag.iter_mut().enumerate() {
+        let mut node = root;
+        let mut j = k;
+        while j < n {
+            match node.children.get(&clusters[j]) {
+                Some(next) => {
+                    node = next;
+                    j += 1;
+                    if node.is_word {
+                        edges.push(j);
+                    }
+                }
+                None => break,
+            }
+        }
+        if edges.is_empty() {
+            edges.push(k + 1);
+        }
+    }
+
+    let log_prob = |word: &str| -> f64 {
+        let count = freq_counts.get(word).copied().unwrap_or(0).max(1) as f64;
+        (count / freq_total as f64).ln()
+    };
+
+    // Right-to-left DP for the highest cumulative log-probability path.
+    let mut best_score = vec![f64::NEG_INFINITY; n + 1];
+    let mut best_end = vec![0usize; n];
+    best_score[n] = 0.0;
+    for k in (0..n).rev() {
+        for &j in &dag[k] {
+            let word = clusters[k..j].concat();
+            let score = log_prob(&word) + best_score[j];
+            if score > best_score[k] {
+                best_score[k] = score;
+                best_end[k] = j;
+            }
+        }
+    }
+
+    // Reconstruct left to right.
+    let mut tokens = Vec::new();
+    let mut k = 0;
+    while k < n {
+        let j = best_end[k];
+        tokens.push(clusters[k..j].to_vec());
+        k = j;
+    }
+    tokens
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,5 +412,35 @@ mod tests {
         // (identical) result is returned.
         let tk = KhmerTokenizer::empty().with_strategy(Strategy::BiMaxMatch);
         assert_eq!(tk.segment("ខ្មែរ"), vec!["ខ្មែ", "រ"]);
+    }
+
+    #[test]
+    fn unigramdp_falls_back_to_forward_without_frequencies() {
+        let tk = KhmerTokenizer::from_words(["សួស្តី", "អ្នក"]).with_strategy(Strategy::UnigramDp);
+        assert_eq!(tk.segment("សួស្តីអ្នក"), vec!["សួស្តី", "អ្នក"]);
+    }
+
+    #[test]
+    fn unigramdp_prefers_the_higher_probability_path_over_greedy_match() {
+        // "ក", "ខ", "គ" are three separate single-cluster base consonants
+        // (no vowels/subscripts), so "កខគ" splits into exactly 3 clusters —
+        // a clean synthetic ambiguity. Both greedy forward-max-match and
+        // BiMM (which ties and defaults to forward) always resolve this to
+        // ["កខ", "គ"], because plain longest-match can never backtrack to
+        // consider starting fresh at cluster 1. Only a DAG-based scorer can
+        // even represent the alternative path ["ក", "ខគ"].
+        let tk = KhmerTokenizer::from_words(["ក", "កខ", "ខគ", "គ"]);
+        assert_eq!(tk.segment("កខគ"), vec!["កខ", "គ"]); // sanity: FMM's fixed answer
+
+        // Weight "ក" and "ខគ" heavily over "កខ" and "គ" — enough that the
+        // alternative path's cumulative probability wins decisively.
+        let freqs = [
+            ("ក".to_string(), 100),
+            ("ខគ".to_string(), 100),
+            ("កខ".to_string(), 1),
+            ("គ".to_string(), 1),
+        ];
+        let tk = tk.with_strategy(Strategy::UnigramDp).with_frequencies(freqs);
+        assert_eq!(tk.segment("កខគ"), vec!["ក", "ខគ"]);
     }
 }

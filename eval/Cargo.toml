@@ -1,0 +1,16 @@
+[package]
+name = "khmer-tokenizer-eval"
+description = "Corpus loading and P/R/F1 evaluation metrics for khmer-tokenizer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "khmer_tokenizer_eval"
+path = "src/lib.rs"
+
+[dependencies]
+khmer-tokenizer-core = { path = "../core" }

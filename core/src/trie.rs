@@ -77,6 +77,18 @@ impl KhmerTokenizer {
         self.word_count == 0
     }
 
+    /// True if `word` is an exact entry in the dictionary.
+    pub fn contains(&self, word: &str) -> bool {
+        let mut node = &self.root;
+        for cl in split_kcc(word) {
+            match node.children.get(&cl) {
+                Some(next) => node = next,
+                None => return false,
+            }
+        }
+        node.is_word
+    }
+
     /// Segment a continuous string of Khmer text into tokens.
     ///
     /// The algorithm runs a maximum-matching (longest-match) walk over the
@@ -175,5 +187,13 @@ mod tests {
         tk.insert("ខ្មែរ");
         tk.insert("ខ្មែរ"); // duplicate, not double-counted
         assert_eq!(tk.len(), 1);
+    }
+
+    #[test]
+    fn contains_checks_exact_dictionary_entries() {
+        let tk = KhmerTokenizer::from_words(["កម្ពុជា"]);
+        assert!(tk.contains("កម្ពុជា"));
+        assert!(!tk.contains("កម្ពុ")); // prefix, not a full entry
+        assert!(!tk.contains("ខ្មែរ")); // absent entirely
     }
 }

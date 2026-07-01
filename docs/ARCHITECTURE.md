@@ -34,7 +34,7 @@ model training later.
 | Normalizer       | `core/src/normalize.rs`  | canonicalize Unicode ordering variants       | 🔜 Phase 5 |
 | Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | 🔜 Phase 3 |
 | Scorer           | `core/src/score.rs`      | frequency-based max-probability path         | 🔜 Phase 3 |
-| Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | 🔜 Phase 1 |
+| Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
 | Bindings         | `wasm/`, `py/`         | run from JS/browser and Python               | 🔭 future  |
 

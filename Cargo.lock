@@ -12,3 +12,18 @@ dependencies = [
 [[package]]
 name = "khmer-tokenizer-core"
 version = "0.1.0"
+
+[[package]]
+name = "khmer-tokenizer-eval"
+version = "0.1.0"
+dependencies = [
+ "khmer-tokenizer-core",
+]
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "khmer-tokenizer-core",
+ "khmer-tokenizer-eval",
+]

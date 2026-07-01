@@ -7,3 +7,9 @@
 .idea/
 .vscode/
 *.swp
+
+# Working documents not meant for the repo
+docs/*.docx
+
+# Downloaded corpora — CC BY-NC-SA (khPOS etc.), evaluation-only, never bundled
+/data/

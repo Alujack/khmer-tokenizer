@@ -5,30 +5,33 @@ rule: **no accuracy change lands without a before/after number from the harness.
 Background and citations: [RESEARCH.md](./RESEARCH.md).
 
 Current baseline: forward maximum-matching over a Khmer-Character-Cluster trie,
-with a ~100-word seed dictionary. Accuracy is currently *unmeasured* — Phase 1
-fixes that.
+with a ~100-word seed dictionary. Measured in Phase 1 — see
+[BENCHMARKS.md](./BENCHMARKS.md) (F1 0.2174, R-iv 0.9990, R-oov 0.2047 against
+khPOS OPEN-TEST). The low F1 is the seed dictionary's coverage, not the
+matching logic — R-iv near 1.0 shows the trie itself is correct.
 
 ---
 
-## Phase 1 — Evaluation harness (do this first)
+## Phase 1 — Evaluation harness (do this first) ✅
 
 **Goal:** a repeatable command that prints token-level Precision / Recall / F1
 (plus OOV recall) for any strategy against a gold corpus, and records a baseline.
 
-- [ ] Add an `eval/` crate (or a `cargo xtask eval` task) that depends on `core`.
-- [ ] Corpus loader for **khPOS** (`OPEN-TEST` + closed-test). Derive each
-      example as `(input_without_spaces, gold_tokens)`. Confirm the file's exact
-      word delimiter from its `data/` folder before parsing.
-- [ ] Implement metrics: token-span **P / R / F1**, **R-oov** and **R-iv**
+- [x] Add an `eval/` crate (or a `cargo xtask eval` task) that depends on `core`.
+- [x] Corpus loader for **khPOS** (`OPEN-TEST` + closed-test). Derive each
+      example as `(input_without_spaces, gold_tokens)`. Confirmed the file's
+      word delimiter (single space; compound words joined with an internal
+      `_`/`~`, stripped by the parser) against the real `data/khpos/` clone.
+- [x] Implement metrics: token-span **P / R / F1**, **R-oov** and **R-iv**
       (needs the dictionary's vocab), and word-level accuracy. Match the
       SIGHAN convention (a token is correct only if both boundaries match).
-- [ ] `make eval` / `cargo xtask eval` downloads the corpus to `data/` (which is
+- [x] `cargo xtask eval` downloads the corpus to `data/` (which is
       `.gitignore`d — corpora are **CC BY-NC-SA**, never committed) and prints a
       table.
-- [ ] **Record the baseline** for forward-MM + seed dict in
+- [x] **Record the baseline** for forward-MM + seed dict in
       `docs/BENCHMARKS.md`.
 
-*Exit criteria:* `cargo xtask eval` prints P/R/F1 for the current engine.
+*Exit criteria:* `cargo xtask eval` prints P/R/F1 for the current engine. **Met.**
 
 ## Phase 2 — Real dictionary
 

@@ -8,9 +8,10 @@
 //! 1. **Cluster pass** — [`split_kcc`] groups the text into Khmer Character
 //!    Clusters (a base character plus its subscripts and vowels). This keeps the
 //!    segmenter from ever splitting *inside* an orthographic syllable.
-//! 2. **Longest-match pass** — [`KhmerTokenizer`] walks a cluster-keyed trie and
-//!    consumes the longest dictionary word at each position, falling back to a
-//!    single cluster when nothing matches.
+//! 2. **Boundary pass** — [`KhmerTokenizer`] walks a cluster-keyed trie to
+//!    place word boundaries, using one of a few [`Strategy`] algorithms
+//!    (default: greedy longest-match, falling back to a single cluster when
+//!    nothing matches).
 //!
 //! The engine is `std`-only (no external dependencies) and deterministic.
 //!
@@ -24,9 +25,11 @@
 //! ```
 
 mod kcc;
+mod strategy;
 mod trie;
 
 pub use kcc::{is_khmer, split_kcc};
+pub use strategy::Strategy;
 pub use trie::KhmerTokenizer;
 
 /// The embedded default dictionary (59,526 words; see `ATTRIBUTION.md`): one

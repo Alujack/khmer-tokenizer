@@ -32,7 +32,7 @@ model training later.
 | Tokenizer API    | `core/src/lib.rs`        | public entry point, dictionary loading       | ✅ built   |
 | CLI              | `cli/src/main.rs`        | run it from the terminal / pipes             | ✅ built   |
 | Normalizer       | `core/src/normalize.rs`  | canonicalize Unicode ordering variants       | 🔜 Phase 5 |
-| Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | 🔜 Phase 3 |
+| Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | 🚧 partial (FMM + BiMM built; UnigramDp pending a frequency source) |
 | Scorer           | `core/src/score.rs`      | frequency-based max-probability path         | 🔜 Phase 3 |
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
@@ -76,12 +76,17 @@ flowchart TB
 ```rust
 // The seam: callers never change, the engine behind it can.
 pub enum Strategy {
-    ForwardMaxMatch,   // today
-    BiMaxMatch,        // Phase 3 — cheap accuracy bump
-    UnigramDp,         // Phase 3 — frequency-scored, recommended default
+    ForwardMaxMatch,   // built — default (determinism/speed)
+    BiMaxMatch,        // built — Phase 3, cheap accuracy bump (see BENCHMARKS.md)
+    // UnigramDp,       // Phase 3 (remaining) — frequency-scored; blocked on a frequency source
     // Model(Box<dyn Segmenter>) // future — a trained model, same API
 }
 ```
+
+A user who writes `tokenizer.segment(text)` doesn't need to change anything
+when switching strategies — `KhmerTokenizer::with_strategy(Strategy::BiMaxMatch)`
+chains onto any constructor, and the CLI exposes the same choice via
+`--strategy fmm|bimm`.
 
 A user who writes `tokenizer.segment(text)` today keeps working when you later
 drop in a trained model. That stability is what lets you experiment freely.

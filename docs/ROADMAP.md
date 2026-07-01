@@ -4,13 +4,13 @@ The next phase makes `khmer-tokenizer` *measurable* and then *better*. Guiding
 rule: **no accuracy change lands without a before/after number from the harness.**
 Background and citations: [RESEARCH.md](./RESEARCH.md).
 
-Current baseline: forward maximum-matching over a Khmer-Character-Cluster trie,
-now with the 59,526-word dictionary from Phase 2. Measured — see
-[BENCHMARKS.md](./BENCHMARKS.md) (F1 0.7216, R-iv 0.8144, R-oov 0.3505 against
-khPOS OPEN-TEST, up from F1 0.2174 with the old ~100-word seed dict). R-iv
-*dropped* from the Phase 1 number — more dictionary coverage means more
-greedy-FMM boundary ambiguity, which is exactly what Phase 3 (BiMM/UnigramDp)
-targets next.
+Current default: forward maximum-matching over a Khmer-Character-Cluster trie,
+with the 59,526-word dictionary from Phase 2. A `Strategy::BiMaxMatch` option
+now also exists (Phase 3, partial) and measures slightly better — see
+[BENCHMARKS.md](./BENCHMARKS.md) (FMM: F1 0.7216, R-iv 0.8144; BiMM: F1
+0.7255, R-iv 0.8184 — against khPOS OPEN-TEST). FMM stays the *default*
+(determinism/speed, per the decision below) until `UnigramDp` lands and the
+three can be compared properly.
 
 ---
 
@@ -67,26 +67,36 @@ targets next.
 *Exit criteria:* F1 improvement from dictionary coverage is quantified. **Met**
 — F1 0.2174 → 0.7216.
 
-## Phase 3 — Scored segmentation (the algorithmic upgrade)
+## Phase 3 — Scored segmentation (the algorithmic upgrade) 🚧 partial
 
 **Goal:** beat greedy longest-match on ambiguous input.
 
-- [ ] Introduce a `Strategy` enum: `ForwardMaxMatch` (current), `BiMaxMatch`,
-      `UnigramDp`. Select at construction; default stays deterministic.
-- [ ] Implement **bidirectional max-match** as a cheap intermediate (forward +
-      backward; on disagreement prefer fewer tokens / fewer single-cluster
-      tokens).
+- [x] Introduce a `Strategy` enum (`core/src/strategy.rs`): `ForwardMaxMatch`
+      (default, stays deterministic), `BiMaxMatch`. Selected via
+      `KhmerTokenizer::with_strategy(...)`; also exposed as `cli --strategy
+      fmm|bimm`.
+- [x] Implement **bidirectional max-match** (`core/src/trie.rs`: `rev_root` +
+      `backward_match` + `bimm`) as a cheap intermediate — forward + backward
+      over the same cluster run; on disagreement, fewer tokens wins, then
+      fewer single-cluster tokens, then forward (Bi & Taing, APSIPA 2014).
 - [ ] Implement **unigram max-probability path** (jieba-style): build a DAG of
       dictionary matches over the cluster stream, then DP for the highest
-      log-probability path using word frequencies. **Frequency source is still
-      open** — Phase 2 didn't produce one (see Phase 2 notes above). Options:
-      count frequencies from khPOS's *training* split (CC BY-NC-SA — fine for
-      local/non-bundled derivation, same constraint as Phase 4's HMM), or
-      revisit `khopilot/khmer-lexicon`'s bundled `frequency` field if an HF
-      token becomes available.
-- [ ] Benchmark all three on the harness; make the winner the documented default.
+      log-probability path using word frequencies. **Still blocked on a
+      frequency source** — Phase 2 didn't produce one (see Phase 2 notes
+      above). Options: count frequencies from khPOS's *training* split (CC
+      BY-NC-SA — fine for local/non-bundled derivation, same constraint as
+      Phase 4's HMM), or revisit `khopilot/khmer-lexicon`'s bundled
+      `frequency` field if an HF token becomes available.
+- [x] Benchmarked FMM vs. BiMM on the harness (`docs/BENCHMARKS.md`): BiMM
+      wins on every metric except a negligible R-oov dip (F1 0.7216 →
+      0.7255). **Default stays `ForwardMaxMatch`** for now — the win is small
+      enough that determinism/simplicity wins until `UnigramDp` is in the mix
+      and a real three-way comparison can decide the default (per the
+      "Decisions to confirm" note below).
 
-*Exit criteria:* `UnigramDp` (or BiMM) shows a measured F1 gain over forward-MM.
+*Exit criteria:* `UnigramDp` (or BiMM) shows a measured F1 gain over
+forward-MM. **Partially met** — BiMM's gain is measured and real, but small;
+`UnigramDp` (the expected bigger lever) awaits a frequency source.
 
 ## Phase 4 — Unknown-word handling
 
@@ -146,7 +156,10 @@ khmerTokenizer/
 2. **Primary corpus:** khPOS only to start, or khPOS + ALT for cross-domain?
    Recommendation: khPOS first, add ALT in Phase 3 once the harness is proven.
 3. **Default strategy after Phase 3:** keep `ForwardMaxMatch` as default for
-   determinism/speed, or promote `UnigramDp` once it wins? Decide on the numbers.
+   determinism/speed, or promote `UnigramDp` once it wins? Decide on the
+   numbers. **Still open:** BiMM's numbers are in (a small win — see
+   `BENCHMARKS.md`) but not enough to justify switching the default off FMM by
+   itself; revisit once `UnigramDp` exists and all three can be compared.
 4. **License posture:** confirm we will *only* bundle CC BY / MIT-class data and
    keep all NC / ShareAlike corpora download-only. (Recommended — protects the
    MIT/Apache licensing of the project.)

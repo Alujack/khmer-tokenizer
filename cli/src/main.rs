@@ -4,6 +4,7 @@
 //! khmer-tokenizer "សួស្តីអ្នកទាំងអស់គ្នា"   # segment argument(s)
 //! echo "សួស្តីអ្នក" | khmer-tokenizer        # segment stdin
 //! khmer-tokenizer --json "ភាសាខ្មែរ"         # JSON array per line
+//! khmer-tokenizer --strategy bimm "..."     # bidirectional max-match
 //! ```
 //!
 //! Output is space-separated tokens by default, or a JSON array with `--json`.
@@ -12,21 +13,40 @@
 
 use std::io::{self, Read, Write};
 
-use khmer_tokenizer_core::KhmerTokenizer;
+use khmer_tokenizer_core::{KhmerTokenizer, Strategy};
 
 fn main() {
     let mut json = false;
+    let mut strategy = Strategy::ForwardMaxMatch;
     let mut text_args: Vec<String> = Vec::new();
 
-    for arg in std::env::args().skip(1) {
-        match arg.as_str() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
             "--json" | "-j" => json = true,
             "--help" | "-h" => {
                 print_help();
                 return;
             }
-            _ => text_args.push(arg),
+            "--strategy" | "-s" => {
+                i += 1;
+                let Some(value) = args.get(i) else {
+                    eprintln!("error: --strategy requires a value (fmm or bimm)");
+                    std::process::exit(1);
+                };
+                strategy = match value.as_str() {
+                    "fmm" => Strategy::ForwardMaxMatch,
+                    "bimm" => Strategy::BiMaxMatch,
+                    other => {
+                        eprintln!("error: unknown strategy '{other}' (expected fmm or bimm)");
+                        std::process::exit(1);
+                    }
+                };
+            }
+            arg => text_args.push(arg.to_string()),
         }
+        i += 1;
     }
 
     // Prefer text from arguments; otherwise read stdin.
@@ -41,7 +61,7 @@ fn main() {
         buf
     };
 
-    let tk = KhmerTokenizer::with_default_dict();
+    let tk = KhmerTokenizer::with_default_dict().with_strategy(strategy);
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
@@ -81,6 +101,7 @@ fn print_help() {
     println!("  khmer-tokenizer [OPTIONS] [TEXT...]");
     println!("  echo TEXT | khmer-tokenizer [OPTIONS]\n");
     println!("OPTIONS:");
-    println!("  -j, --json    Output a JSON array of tokens per line");
-    println!("  -h, --help    Show this help and exit");
+    println!("  -j, --json             Output a JSON array of tokens per line");
+    println!("  -s, --strategy <NAME>  Segmentation strategy: fmm (default) or bimm");
+    println!("  -h, --help             Show this help and exit");
 }

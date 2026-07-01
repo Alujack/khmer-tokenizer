@@ -15,6 +15,7 @@ with a fully correct token sequence).
 | ---------- | --------------- | ---------------------------------------- | ------ | ------ | ------ | ------ | ------ | -------- | ---------------- |
 | 2026-07-01 | ForwardMaxMatch | seed dict (~100 words)                    | 0.1576 | 0.3501 | 0.2174 | 0.9990 | 0.2047 | 0.0050   | khPOS OPEN-TEST |
 | 2026-07-01 | ForwardMaxMatch | chamkho khmerdict.txt (59,526 words)      | 0.7026 | 0.7417 | 0.7216 | 0.8144 | 0.3505 | 0.3650   | khPOS OPEN-TEST |
+| 2026-07-01 | BiMaxMatch      | chamkho khmerdict.txt (59,526 words)      | 0.7072 | 0.7449 | 0.7255 | 0.8184 | 0.3493 | 0.3650   | khPOS OPEN-TEST |
 
 ## Reading Phase 1's baseline (~100-word seed dict)
 
@@ -47,3 +48,23 @@ Confirms `ROADMAP.md`'s framing — dictionary coverage was the biggest lever:
 
 This sets up Phase 3 to be evaluated meaningfully: BiMM/UnigramDp's job is to
 recover the R-iv/precision this larger dictionary gave up to ambiguity.
+
+## Reading Phase 3's first result (BiMaxMatch vs. ForwardMaxMatch)
+
+A small, real win, as expected for the "cheap intermediate" step:
+
+- **F1 0.7216 → 0.7255**, **precision 0.7026 → 0.7072**, **R-iv 0.8144 →
+  0.8184** — BiMM recovers a slice of the ambiguity FMM introduces, by
+  picking the backward-max-match result on disagreement when it has fewer
+  tokens (or fewer single-cluster tokens on a tie).
+- **Word accuracy unchanged (0.3650 both ways):** BiMM only changes a small
+  number of ambiguous spans per sentence; not enough sentences flipped from
+  wrong to fully-correct (or vice versa) to move this coarser metric.
+- **R-oov dipped very slightly (0.3505 → 0.3493):** BiMM's tie-break applies
+  to the whole Khmer run, including runs that mix in-vocabulary and
+  out-of-vocabulary clusters, so it can occasionally trade an OOV cluster's
+  lucky fallback match for a better overall boundary.
+
+`UnigramDp` (frequency-scored DP over the match DAG) is still the expected
+bigger lever here — see `ROADMAP.md` Phase 3 for why it's not implemented yet
+(no frequency source survived Phase 2's licensing check).

@@ -2,7 +2,8 @@
 
 use khmer_tokenizer_eval::Metrics;
 
-pub fn print_table(metrics: &Metrics) {
+pub fn print_table(label: &str, metrics: &Metrics) {
+    println!("--- {label} ---");
     println!("sentences      : {}", metrics.sentences);
     println!("precision      : {:.4}", metrics.precision);
     println!("recall         : {:.4}", metrics.recall);

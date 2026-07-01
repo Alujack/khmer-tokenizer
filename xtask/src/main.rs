@@ -12,7 +12,7 @@ mod report;
 use std::fs;
 use std::path::Path;
 
-use khmer_tokenizer_core::KhmerTokenizer;
+use khmer_tokenizer_core::{KhmerTokenizer, Strategy};
 use khmer_tokenizer_eval::corpus::{self, Split};
 use khmer_tokenizer_eval::evaluate;
 
@@ -43,9 +43,14 @@ fn run_eval() {
         std::process::exit(1);
     });
 
-    let tokenizer = KhmerTokenizer::with_default_dict();
-    let metrics = evaluate(&examples, &tokenizer);
-    report::print_table(&metrics);
+    for (label, strategy) in [
+        ("ForwardMaxMatch", Strategy::ForwardMaxMatch),
+        ("BiMaxMatch", Strategy::BiMaxMatch),
+    ] {
+        let tokenizer = KhmerTokenizer::with_default_dict().with_strategy(strategy);
+        let metrics = evaluate(&examples, &tokenizer);
+        report::print_table(label, &metrics);
+    }
 }
 
 fn run_prepare_dict() {

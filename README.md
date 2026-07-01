@@ -23,12 +23,17 @@ Segmentation runs in two passes:
    clusters instead of raw Unicode scalars is what guarantees the segmenter never
    splits *inside* an orthographic syllable — the classic bug in naive Khmer
    tokenizers.
-2. **Longest-match pass** — a trie keyed on whole clusters is walked with a
-   maximum-matching (longest-match) strategy: at each position the engine
-   consumes the longest run of clusters that forms a dictionary word. When no
-   word matches, it falls back to a single cluster, so output is always
-   well-formed. Runs of non-Khmer text (Latin, digits, punctuation) become their
-   own tokens; whitespace separates tokens.
+2. **Boundary pass** — a trie keyed on whole clusters is walked to place word
+   boundaries, using one of two [`Strategy`](core/src/strategy.rs) algorithms:
+   - `ForwardMaxMatch` (default) — greedy longest-match, left to right: at
+     each position, consume the longest run of clusters that forms a
+     dictionary word. Falls back to a single cluster when nothing matches.
+   - `BiMaxMatch` — also runs backward max-match and picks between them on
+     disagreement (fewer tokens wins, then fewer single-cluster tokens);
+     measurably more accurate — see [BENCHMARKS.md](docs/BENCHMARKS.md).
+
+   Either way, runs of non-Khmer text (Latin, digits, punctuation) become
+   their own tokens, and whitespace separates tokens without producing one.
 
 The engine is `std`-only and deterministic. No model, no training step, no
 network.
@@ -61,6 +66,10 @@ assert_eq!(tokens, vec!["សួស្តី", "អ្នក", "ទាំងអ�
 let tk = KhmerTokenizer::from_words(["ភាសា", "ខ្មែរ"]);
 assert_eq!(tk.segment("ភាសាខ្មែរ"), vec!["ភាសា", "ខ្មែរ"]);
 
+// ...or a different strategy (see "How it works" above).
+use khmer_tokenizer_core::Strategy;
+let tk = KhmerTokenizer::with_default_dict().with_strategy(Strategy::BiMaxMatch);
+
 // Need just the orthographic clusters?
 use khmer_tokenizer_core::split_kcc;
 assert_eq!(split_kcc("ខ្មែរ"), vec!["ខ្មែ", "រ"]);
@@ -79,6 +88,9 @@ cargo build --release
 # JSON array output
 ./target/release/khmer-tokenizer --json "ភាសាខ្មែរ"
 # -> ["ភាសា","ខ្មែរ"]
+
+# Bidirectional max-match instead of the default forward max-match
+./target/release/khmer-tokenizer --strategy bimm "សួស្តីអ្នកទាំងអស់គ្នា"
 
 # Read from stdin, one line at a time
 echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | ./target/release/khmer-tokenizer
@@ -111,9 +123,9 @@ To use your own lexicon instead:
 cargo test
 ```
 
-Covers KCC splitting (subscripts and vowels stay attached), longest-match
-segmentation, mixed Khmer/Latin/number input, the out-of-vocabulary fallback,
-and dictionary loading.
+Covers KCC splitting (subscripts and vowels stay attached), both segmentation
+strategies (forward + bidirectional max-match), mixed Khmer/Latin/number
+input, the out-of-vocabulary fallback, and dictionary loading.
 
 ## Roadmap
 
@@ -124,8 +136,11 @@ Designed so these slot in without restructuring the workspace:
 - **Python bindings** — a `py/` crate using PyO3 so it drops into existing
   `khnlp`-style pipelines.
 - **Benchmarks** — a Criterion suite to track throughput.
-- **Scored segmentation** — optional word-frequency weighting (Viterbi) for
-  better disambiguation on hard cases.
+- **Scored segmentation (`UnigramDp`)** — frequency-weighted DP over the match
+  DAG (jieba-style) for better disambiguation on hard cases; blocked on
+  sourcing word frequencies under a bundleable license (see
+  [docs/ROADMAP.md](docs/ROADMAP.md) Phase 3). `BiMaxMatch` (bidirectional
+  max-match) already ships as a cheaper accuracy bump — see "How it works".
 
 ## License
 

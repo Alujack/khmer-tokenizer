@@ -29,13 +29,14 @@ mod trie;
 pub use kcc::{is_khmer, split_kcc};
 pub use trie::KhmerTokenizer;
 
-/// The embedded seed dictionary: one word per line; blank lines and lines
-/// starting with `#` are ignored. Replace or extend it for production use — see
-/// the dictionary notes in the project README.
+/// The embedded default dictionary (59,526 words; see `ATTRIBUTION.md`): one
+/// word per line; blank lines and lines starting with `#` are ignored.
+/// Replace or extend it for your own use case — see the dictionary notes in
+/// the project README.
 pub const DEFAULT_DICT: &str = include_str!("dict.txt");
 
 impl KhmerTokenizer {
-    /// Build a tokenizer pre-loaded with the embedded seed dictionary
+    /// Build a tokenizer pre-loaded with the embedded default dictionary
     /// ([`DEFAULT_DICT`]).
     pub fn with_default_dict() -> Self {
         Self::from_dict_str(DEFAULT_DICT)

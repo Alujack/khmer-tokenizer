@@ -5,10 +5,12 @@ rule: **no accuracy change lands without a before/after number from the harness.
 Background and citations: [RESEARCH.md](./RESEARCH.md).
 
 Current baseline: forward maximum-matching over a Khmer-Character-Cluster trie,
-with a ~100-word seed dictionary. Measured in Phase 1 — see
-[BENCHMARKS.md](./BENCHMARKS.md) (F1 0.2174, R-iv 0.9990, R-oov 0.2047 against
-khPOS OPEN-TEST). The low F1 is the seed dictionary's coverage, not the
-matching logic — R-iv near 1.0 shows the trie itself is correct.
+now with the 59,526-word dictionary from Phase 2. Measured — see
+[BENCHMARKS.md](./BENCHMARKS.md) (F1 0.7216, R-iv 0.8144, R-oov 0.3505 against
+khPOS OPEN-TEST, up from F1 0.2174 with the old ~100-word seed dict). R-iv
+*dropped* from the Phase 1 number — more dictionary coverage means more
+greedy-FMM boundary ambiguity, which is exactly what Phase 3 (BiMM/UnigramDp)
+targets next.
 
 ---
 
@@ -33,22 +35,37 @@ matching logic — R-iv near 1.0 shows the trie itself is correct.
 
 *Exit criteria:* `cargo xtask eval` prints P/R/F1 for the current engine. **Met.**
 
-## Phase 2 — Real dictionary
+## Phase 2 — Real dictionary ✅
 
 **Goal:** replace the seed list; measure the lift from coverage alone.
 
-- [ ] Integrate a permissive lexicon — start with
+- [x] Integrate a permissive lexicon. **Changed from the original plan:**
       [khopilot/khmer-lexicon](https://huggingface.co/datasets/khopilot/khmer-lexicon)
-      (CC BY 4.0). Add an `ATTRIBUTION.md` crediting the source.
-- [ ] Add a frequency table from
-      [silnrsi/khmerlbdict](https://github.com/silnrsi/khmerlbdict) / SEALang
-      (needed by Phase 3). Store as `word<TAB>count`.
-- [ ] Data-prep script (`xtask prepare-dict`): normalize, dedupe, drop bad rows,
-      emit the embedded `dict.txt` (+ optional `freq.tsv`). Keep raw downloads
-      out of git; commit only the cleaned artifact whose license permits it.
-- [ ] Re-run the harness; log the delta in `BENCHMARKS.md`.
+      (CC BY 4.0) turned out to be **gated** on HuggingFace — it needs an
+      authenticated, terms-accepted account and a personal access token, which
+      no automated `xtask` can obtain, and it ships only as Parquet. Used
+      [chamkho](https://github.com/veer66/chamkho)'s `khmerdict.txt` instead:
+      59,526 words, ungated, plain text, its own standalone MIT license file
+      (`LICENSE-khmerdict`, copyright SIL NRSI). Documented in
+      `ATTRIBUTION.md`, including why khmer-lexicon was passed over.
+- [ ] ~~Add a frequency table from silnrsi/khmerlbdict / SEALang~~ — **deferred
+      to Phase 3.** Inspected `khmerlbdict` directly: its `LICENSE` (MIT) only
+      covers the tooling: the wordlist data itself is compiled from SEALang,
+      CLDR, Khmer Bible translations, and excerpts of specific published
+      books, none of which have a stated permissive license in that repo. Not
+      safe to bundle as-is. `khmerdict.txt` has no frequency field either, so
+      Phase 3 needs to either source frequencies separately (e.g. count them
+      from khPOS's *training* split, which is fine for local, non-bundled use)
+      or revisit `khopilot/khmer-lexicon` if an HF token becomes available.
+- [x] Data-prep script (`cargo xtask prepare-dict`, `xtask/src/dict.rs` +
+      `download.rs`): clones chamkho, trims/dedupes/drops blank or comment
+      lines, emits `core/src/dict.txt`. (No bad rows existed in the source —
+      verified empirically: 0 blank lines, 0 duplicates, 0 non-Khmer/ASCII
+      contamination.)
+- [x] Re-ran the harness; logged the delta in `BENCHMARKS.md`.
 
-*Exit criteria:* F1 improvement from dictionary coverage is quantified.
+*Exit criteria:* F1 improvement from dictionary coverage is quantified. **Met**
+— F1 0.2174 → 0.7216.
 
 ## Phase 3 — Scored segmentation (the algorithmic upgrade)
 
@@ -61,7 +78,12 @@ matching logic — R-iv near 1.0 shows the trie itself is correct.
       tokens).
 - [ ] Implement **unigram max-probability path** (jieba-style): build a DAG of
       dictionary matches over the cluster stream, then DP for the highest
-      log-probability path using the Phase-2 frequencies.
+      log-probability path using word frequencies. **Frequency source is still
+      open** — Phase 2 didn't produce one (see Phase 2 notes above). Options:
+      count frequencies from khPOS's *training* split (CC BY-NC-SA — fine for
+      local/non-bundled derivation, same constraint as Phase 4's HMM), or
+      revisit `khopilot/khmer-lexicon`'s bundled `frequency` field if an HF
+      token becomes available.
 - [ ] Benchmark all three on the harness; make the winner the documented default.
 
 *Exit criteria:* `UnigramDp` (or BiMM) shows a measured F1 gain over forward-MM.

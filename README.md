@@ -42,7 +42,7 @@ khmerTokenizer/
 │   ├── src/lib.rs      #   public API + dictionary helpers
 │   ├── src/kcc.rs      #   Khmer Character Cluster splitting
 │   ├── src/trie.rs     #   cluster trie + longest-match segmentation
-│   └── src/dict.txt    #   embedded seed dictionary
+│   └── src/dict.txt    #   embedded default dictionary
 └── cli/                # khmer-tokenizer-cli — the command-line tool
     └── src/main.rs
 ```
@@ -52,7 +52,7 @@ khmerTokenizer/
 ```rust
 use khmer_tokenizer_core::KhmerTokenizer;
 
-// Use the embedded seed dictionary...
+// Use the embedded default dictionary...
 let tk = KhmerTokenizer::with_default_dict();
 let tokens = tk.segment("សួស្តីអ្នកទាំងអស់គ្នា");
 assert_eq!(tokens, vec!["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]);
@@ -87,21 +87,23 @@ echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | ./target/rele
 ## Dictionary
 
 Segmentation quality is bounded by the dictionary. The bundled
-`core/src/dict.txt` is a small, hand-curated starter list (~100 common words) so
-the library works out of the box — it is **not** comprehensive.
+`core/src/dict.txt` has **59,526 words**, sourced from
+[chamkho](https://github.com/veer66/chamkho)'s `khmerdict.txt`
+(MIT license, copyright SIL NRSI — see [ATTRIBUTION.md](./ATTRIBUTION.md)).
+It's regenerated with `cargo xtask prepare-dict`, which re-downloads and
+re-cleans the source rather than hand-editing the committed file.
 
-For real use, swap in a full Khmer lexicon:
+To use your own lexicon instead:
 
 - Put one word per line in a text file (`#` comments and blank lines are
   ignored), then load it with `KhmerTokenizer::from_dict_str(std::fs::read_to_string(path)?.as_str())`,
   or replace `core/src/dict.txt` to keep it embedded in the binary via
   `include_str!`.
-- A larger list dramatically improves results; tens of thousands of entries is
-  typical for production Khmer segmenters.
 
 > **Licensing note:** many published Khmer word lists and corpora carry their own
 > licenses. Before bundling a third-party lexicon into this (MIT/Apache-2.0)
-> project, check that its license permits redistribution and is compatible.
+> project, check that its license permits redistribution and is compatible —
+> see `docs/RESEARCH-2.md` §5 for a survey of common sources.
 
 ## Tests
 

@@ -181,3 +181,37 @@ full reasoning.
   `from_dict_str`), any word chamkho didn't special-case, and any future
   deduplication of `dict.txt` would all still benefit from normalizing the
   input rather than relying on that duplication.
+
+## Cross-corpus check: kh_data_10000b (silver reference — treat with caution)
+
+A second, much larger corpus: ~10,000 real-world Khmer web articles as
+`<id>_orig.txt` / `<id>_seg_200b.txt` pairs (word boundaries marked with
+`U+200B` ZERO WIDTH SPACE). **Not committed** (`data/` is gitignored) and
+**not gold**: no license or provenance ships with it, and the `_200b`
+segmentation looks machine-produced rather than human-verified — so these
+numbers measure *agreement with that unknown system*, not accuracy on the
+same footing as khPOS above. Loader: `eval/src/kh10000b.rs`; run with
+`cargo xtask eval-kh10000b` (never auto-downloaded). Alignment validation
+during loading accepted 9,943/10,000 pairs (the 57 rejects differ only by a
+`•`→`-` bullet normalization in the segmented copy), yielding **80,216
+sentences** — 80× khPOS's OPEN-TEST.
+
+| Date       | Strategy        | P      | R      | F1     | R-iv   | R-oov  | Word Acc | Corpus (reference type) |
+| ---------- | --------------- | ------ | ------ | ------ | ------ | ------ | -------- | ----------------------- |
+| 2026-07-02 | ForwardMaxMatch | 0.7041 | 0.7048 | 0.7044 | 0.7836 | 0.3376 | 0.0463   | kh_data_10000b (silver) |
+| 2026-07-02 | BiMaxMatch      | 0.7101 | 0.7082 | 0.7092 | 0.7879 | 0.3370 | 0.0466   | kh_data_10000b (silver) |
+| 2026-07-02 | ForwardMaxMatch + Normalization | 0.7042 | 0.7048 | 0.7045 | 0.7836 | 0.3378 | 0.0463 | kh_data_10000b (silver) |
+
+Reading it:
+
+- **F1 generalizes** — 0.70–0.71 here vs. 0.72–0.73 on khPOS, on an
+  independently-sourced corpus 80× larger, against a different reference
+  system. The tokenizer is not overfit to the one academic benchmark.
+- **Word accuracy is NOT comparable across corpora** — 4.6% here vs. 36.5%
+  on khPOS looks alarming but is a sentence-length artifact: this corpus
+  averages **38.9 tokens/line** vs. khPOS's 10.8, and word accuracy demands
+  a perfect full-sentence match, so it collapses combinatorially with
+  length (≈ p^n) even at a constant per-token error rate. F1/R-iv are the
+  cross-corpus-comparable numbers.
+- **Phase 5's "normalization ≈ zero effect" replicates** at 80× the sample
+  size (F1 0.7044 → 0.7045).

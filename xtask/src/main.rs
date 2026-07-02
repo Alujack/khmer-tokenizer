@@ -1,8 +1,9 @@
 //! Development tooling for khmer-tokenizer.
 //!
 //! ```text
-//! cargo xtask eval           # download khPOS, run the eval harness, print P/R/F1
-//! cargo xtask prepare-dict   # rebuild core/src/dict.txt from chamkho's khmerdict.txt
+//! cargo xtask eval             # download khPOS, run the eval harness, print P/R/F1
+//! cargo xtask eval-kh10000b    # run against the local (manually-placed) kh_data_10000b corpus
+//! cargo xtask prepare-dict     # rebuild core/src/dict.txt from chamkho's khmerdict.txt
 //! ```
 
 mod dict;
@@ -14,11 +15,12 @@ use std::path::Path;
 
 use khmer_tokenizer_core::{HmmModel, KhmerTokenizer, Strategy};
 use khmer_tokenizer_eval::corpus::{self, Split};
-use khmer_tokenizer_eval::{count_frequencies, evaluate, train_hmm};
+use khmer_tokenizer_eval::{count_frequencies, evaluate, kh10000b, train_hmm};
 
 fn main() {
     match std::env::args().nth(1).as_deref() {
         Some("eval") => run_eval(),
+        Some("eval-kh10000b") => run_eval_kh10000b(),
         Some("prepare-dict") => run_prepare_dict(),
         _ => print_usage(),
     }
@@ -27,8 +29,9 @@ fn main() {
 fn print_usage() {
     eprintln!("USAGE: cargo xtask <COMMAND>\n");
     eprintln!("COMMANDS:");
-    eprintln!("  eval           Download khPOS and print P/R/F1 for the current tokenizer");
-    eprintln!("  prepare-dict   Rebuild core/src/dict.txt from chamkho's khmerdict.txt");
+    eprintln!("  eval             Download khPOS and print P/R/F1 for the current tokenizer");
+    eprintln!("  eval-kh10000b    Evaluate against the local kh_data_10000b corpus (silver reference)");
+    eprintln!("  prepare-dict     Rebuild core/src/dict.txt from chamkho's khmerdict.txt");
 }
 
 fn run_eval() {
@@ -113,6 +116,57 @@ fn run_eval() {
         "UnigramDp + HMM + Normalization (khPOS train, local-only)",
         &metrics,
     );
+}
+
+/// `kh_data_10000b` isn't auto-downloaded like khPOS/chamkho — its source
+/// and license are unclear, so it's never fetched automatically, only read
+/// if a caller has manually placed it under `data/`. Its `_seg_200b`
+/// segmentation looks machine-produced, not human-verified (see
+/// `eval/src/kh10000b.rs`), so results here are a **silver-reference**
+/// comparison, not accuracy in the same sense as the khPOS numbers above.
+fn run_eval_kh10000b() {
+    let dir = Path::new("data/kh_data_10000b");
+    if !dir.exists() {
+        eprintln!(
+            "error: {} not found. This corpus isn't auto-downloaded (source/license \
+             unclear) -- place it there manually to run this command.",
+            dir.display()
+        );
+        std::process::exit(1);
+    }
+
+    let result = kh10000b::load_dir(dir).unwrap_or_else(|e| {
+        eprintln!("error: could not read {}: {e}", dir.display());
+        std::process::exit(1);
+    });
+
+    println!(
+        "loaded {} examples from {}/{} pairs ({} skipped: missing counterpart or misaligned text)\n",
+        result.examples.len(),
+        result.total_pairs - result.skipped_pairs,
+        result.total_pairs,
+        result.skipped_pairs,
+    );
+    println!(
+        "NOTE: kh_data_10000b's segmentation is a SILVER reference of unknown \
+         provenance (looks machine-produced, not human-verified) -- scores below \
+         measure agreement with it, not verified accuracy. See docs/BENCHMARKS.md.\n"
+    );
+
+    for (label, strategy) in [
+        ("ForwardMaxMatch", Strategy::ForwardMaxMatch),
+        ("BiMaxMatch", Strategy::BiMaxMatch),
+    ] {
+        let tokenizer = KhmerTokenizer::with_default_dict()
+            .with_strategy(strategy)
+            .without_normalization();
+        let metrics = evaluate(&result.examples, &tokenizer);
+        report::print_table(label, &metrics);
+    }
+
+    let tokenizer = KhmerTokenizer::with_default_dict().with_strategy(Strategy::ForwardMaxMatch);
+    let metrics = evaluate(&result.examples, &tokenizer);
+    report::print_table("ForwardMaxMatch + Normalization", &metrics);
 }
 
 fn run_prepare_dict() {

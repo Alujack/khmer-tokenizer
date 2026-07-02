@@ -5,6 +5,7 @@
 pub mod corpus;
 pub mod freq;
 pub mod hmm;
+pub mod kh10000b;
 pub mod metrics;
 
 pub use corpus::{load_khpos_dir, parse_khpos, Example};

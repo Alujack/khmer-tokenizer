@@ -1,0 +1,92 @@
+name: Release (PyPI)
+
+# Builds khmer-tokenizer wheels for every major platform and publishes them
+# to PyPI via Trusted Publishing (OIDC) — no API token stored anywhere.
+#
+# One-time setup on PyPI (Manage project -> Publishing -> add a publisher):
+#   owner: Alujack   repository: khmer-tokenizer
+#   workflow: release.yml   environment: pypi
+#
+# Triggers on version tags (v*). Can also be run manually from the Actions
+# tab (workflow_dispatch) — useful for backfilling wheels for an existing
+# release, since `skip-existing` makes re-uploads of same-version files a
+# no-op rather than an error.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wheels:
+    name: wheel ${{ matrix.platform.os }}-${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { runner: ubuntu-latest, os: linux, target: x86_64 }
+          - { runner: ubuntu-latest, os: linux, target: aarch64 }
+          - { runner: macos-13, os: macos, target: x86_64 }
+          - { runner: macos-14, os: macos, target: aarch64 }
+          - { runner: windows-latest, os: windows, target: x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: py
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist
+          manylinux: auto
+      - name: Smoke-test the wheel
+        # linux-aarch64 is cross-compiled on an x86_64 runner, so it can't run here
+        if: ${{ !(matrix.platform.os == 'linux' && matrix.platform.target == 'aarch64') }}
+        shell: bash
+        run: |
+          pip install khmer-tokenizer --no-index --find-links py/dist
+          python -c "from khmer_tokenizer import KhmerTokenizer; assert KhmerTokenizer().segment('សួស្តីអ្នកទាំងអស់គ្នា') == ['សួស្តី', 'អ្នក', 'ទាំងអស់គ្នា']; print('wheel ok')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.platform.os }}-${{ matrix.platform.target }}
+          path: py/dist
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        # maturin vendors the path-dependency (../core) into the sdist, so
+        # `pip install` from source works outside this repo checkout.
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: py
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: py/dist
+
+  publish:
+    name: Publish to PyPI
+    needs: [wheels, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # required for PyPI Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

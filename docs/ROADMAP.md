@@ -263,9 +263,13 @@ comes next:
       `segment`, `split_kcc`, `normalize`, and `is_khmer`. abi3-py39 wheel
       (one wheel per platform for every CPython ≥ 3.9), 13-test pytest
       suite mirroring the core crate's behavioral tests, own CI job
-      (clippy + maturin build + pytest). The `khmer-tokenizer` name is
-      confirmed available on PyPI; actually publishing there (maturin
-      release workflow + PyPI account) is the remaining step.
+      (clippy + maturin build + pytest). **Published to PyPI as
+      `khmer-tokenizer` 0.1.0 (2026-07-02)** — sdist + macOS arm64 wheel
+      uploaded directly; `.github/workflows/release.yml` builds wheels for
+      linux x86_64/aarch64, macOS x86_64/arm64, and Windows on every `v*`
+      tag and publishes them via PyPI Trusted Publishing (OIDC, no stored
+      token; needs the one-time publisher registration described in the
+      workflow's header comment).
 - [ ] **WASM bindings** (`wasm/` via wasm-bindgen) — still pending; same
       motivation, browser/Node audience.
 - [ ] **Explicit non-goal:** chasing neural-SOTA accuracy (UnifiedCut:

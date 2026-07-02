@@ -3,6 +3,7 @@
 [![CI](https://github.com/Alujack/khmer-tokenizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Alujack/khmer-tokenizer/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/khmer-tokenizer-core.svg)](https://crates.io/crates/khmer-tokenizer-core)
 [![docs.rs](https://img.shields.io/docsrs/khmer-tokenizer-core)](https://docs.rs/khmer-tokenizer-core)
+[![PyPI](https://img.shields.io/pypi/v/khmer-tokenizer.svg)](https://pypi.org/project/khmer-tokenizer/)
 
 A fast, dependency-free **Khmer word segmenter** written in Rust.
 
@@ -26,9 +27,8 @@ cargo add khmer-tokenizer-core
 # The command-line tool
 cargo install khmer-tokenizer-cli   # installs the `khmer-tokenizer` binary
 
-# The Python bindings (from a checkout, until published to PyPI)
-pip install maturin && cd py && maturin build --release \
-  && pip install target/wheels/khmer_tokenizer-*.whl
+# The Python bindings
+pip install khmer-tokenizer
 ```
 
 API docs: [docs.rs/khmer-tokenizer-core](https://docs.rs/khmer-tokenizer-core)
@@ -177,7 +177,8 @@ echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | khmer-tokeniz
 
 ## Python usage
 
-The [`py/`](https://github.com/Alujack/khmer-tokenizer/tree/master/py)
+[`pip install khmer-tokenizer`](https://pypi.org/project/khmer-tokenizer/) —
+the [`py/`](https://github.com/Alujack/khmer-tokenizer/tree/master/py)
 crate exposes the same engine to Python via PyO3 (abi3 wheel, works on any
 CPython ≥ 3.9, no Python dependencies):
 
@@ -246,9 +247,6 @@ below a floor. [CI](https://github.com/Alujack/khmer-tokenizer/blob/master/.gith
 
 Designed so these slot in without restructuring the workspace:
 
-- **Publish the Python bindings to PyPI** — the `py/` crate is built and
-  tested (see "Python usage" above); the `khmer-tokenizer` name is
-  confirmed available on PyPI, pending a maturin release workflow.
 - **WASM bindings** — a `wasm/` crate using `wasm-bindgen` + `wasm-pack` to run
   the engine in browsers and Node, publishable to npm.
 - **A statistical BMES tagger tier (CRF-class)** — see

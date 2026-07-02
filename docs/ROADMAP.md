@@ -14,6 +14,11 @@ below), so `ForwardMaxMatch` stays the enum's `#[default]`. `KhmerTokenizer::wit
 (Phase 4, done) composes with any strategy and lifts R-oov by ~0.05 absolute
 with zero R-iv cost (best measured: UnigramDp + HMM, F1 0.7805) — same
 "needs a caller-supplied model" posture as `UnigramDp`'s frequencies.
+Orthographic normalization (Phase 5, done) is on by default via
+`core/src/normalize.rs`; measured effect on the bundled dictionary is exactly
+zero (root cause understood and documented — see `docs/BENCHMARKS.md`), but
+it's kept on as defense in depth for dictionaries/words that dictionary
+doesn't already special-case.
 
 ---
 
@@ -148,17 +153,51 @@ predicted.
 R-oov +0.05 absolute, F1 also improves (0.7216 → 0.7358 FMM+HMM; 0.7661 →
 0.7805 UnigramDp+HMM, the best configuration measured to date).
 
-## Phase 5 — Orthographic normalization
+## Phase 5 — Orthographic normalization ✅
 
 **Goal:** stop missing dictionary hits because of Unicode ordering variants.
 
-- [ ] Add a normalization pass (canonical COENG ordering, vowel/sign reorder,
-      strip zero-width joiners where spurious) applied before segmentation.
-- [ ] Add round-trip and idempotency tests on the normalizer.
-- [ ] Measure its isolated contribution to F1 / R-oov.
+- [x] Added a normalization pass (`core/src/normalize.rs`): reorders a mark
+      (shifter, vowel, or other sign) typed directly before a
+      `COENG`+consonant subscript pair to instead follow it, per the Unicode
+      Khmer syllable structure (base, [Robat], subscript stack, [Shifter],
+      [vowel], [signs]) — Robat is excluded since it's the one mark that's
+      *supposed* to precede the stack. This is the single most common
+      real-world Khmer encoding error; confirmed by directly grepping
+      khPOS's own `OPEN-TEST.word` for the pattern (21 genuine occurrences,
+      e.g. `សិទិ្ធ` for `សិទ្ធិ`). **Descoped:** stripping stray ZWJ/ZWNJ
+      (`U+200C`/`U+200D`) was in the original plan but is left out — deleting
+      characters changes byte length, which would break the eval harness's
+      span-based scoring (and any caller relying on byte-accurate
+      boundaries) without also building an offset map back to the original
+      text, and khPOS's corpus has **zero** ZWJ/ZWNJ occurrences to measure
+      it against anyway. On by default; `KhmerTokenizer::without_normalization()`
+      opts out (e.g. for exact byte-for-byte comparison against pre-Phase-5
+      behavior in the eval harness).
+- [x] Added round-trip and idempotency tests (`core/src/normalize.rs`):
+      reorders a vowel-before-subscript case and a shifter-before-subscript
+      case (both drawn from real corpus occurrences), leaves a legitimate
+      Robat-before-subscript alone, is a no-op on already-canonical text,
+      is idempotent when applied twice, preserves byte length, and cascades
+      correctly through a mark ahead of two stacked subscripts.
+- [x] Measured its isolated contribution to F1/R-oov on top of both the
+      weakest (`ForwardMaxMatch`) and strongest (`UnigramDp + HMM`)
+      configurations (`docs/BENCHMARKS.md`): **exactly zero measured
+      effect**, root-caused by cross-referencing all 21 real corpus
+      occurrences against `core/src/dict.txt` — chamkho's dictionary already
+      bundles the malformed spelling as a duplicate entry for 12 of the 21
+      (so plain trie matching already succeeds without normalization), and
+      the other 9 are personal names absent from the dictionary in *either*
+      spelling. Not one of the 21 flips from wrong to right.
 
 *Exit criteria:* normalization shows a measured, non-negative effect and is
-documented as on-by-default (with an opt-out).
+documented as on-by-default (with an opt-out). **Met, precisely**: the
+measured effect is zero (non-negative, and zero regression risk confirmed on
+the shipped corpus/dictionary), documented on-by-default with
+`without_normalization()` as the opt-out. Kept on anyway as defense in
+depth — the dictionary's duplicate-entry workaround only covers the specific
+words chamkho's maintainers happened to special-case, not custom
+dictionaries (`from_words`/`from_dict_str`) or words chamkho missed.
 
 ## Phase 6 — Regression guard
 

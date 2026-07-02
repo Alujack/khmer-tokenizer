@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use crate::hmm::HmmModel;
 use crate::kcc::{is_khmer, split_kcc};
+use crate::normalize::normalize;
 use crate::strategy::Strategy;
 
 /// One node of the cluster trie. Edges are keyed on whole clusters (not raw
@@ -38,6 +39,10 @@ pub struct KhmerTokenizer {
     /// 4), set with [`with_hmm`](KhmerTokenizer::with_hmm). `None` by
     /// default — unmatched clusters are emitted one per token, same as ever.
     hmm: Option<HmmModel>,
+    /// Set by [`without_normalization`](KhmerTokenizer::without_normalization).
+    /// `false` by default, meaning [`normalize`](crate::normalize) runs
+    /// before every [`segment`](KhmerTokenizer::segment) call (Phase 5).
+    normalization_disabled: bool,
 }
 
 impl KhmerTokenizer {
@@ -116,6 +121,17 @@ impl KhmerTokenizer {
         self
     }
 
+    /// Opt out of the orthographic normalization pass (see [`crate::normalize`])
+    /// that runs before every [`segment`](KhmerTokenizer::segment) call by
+    /// default. Chains onto any constructor. There's normally no reason to
+    /// do this — the pass only reorders characters that were already
+    /// mis-encoded — but it's here for exact byte-for-byte comparison
+    /// against the pre-Phase-5 behavior (e.g. in the eval harness).
+    pub fn without_normalization(mut self) -> Self {
+        self.normalization_disabled = true;
+        self
+    }
+
     /// Insert a single word into the dictionary. Surrounding whitespace is
     /// trimmed; empty words are ignored.
     pub fn insert(&mut self, word: &str) {
@@ -167,6 +183,12 @@ impl KhmerTokenizer {
 
     /// Segment a continuous string of Khmer text into tokens.
     ///
+    /// Unless [`without_normalization`](KhmerTokenizer::without_normalization)
+    /// was called, `text` is first passed through [`crate::normalize`] to
+    /// canonicalize known Khmer Unicode encoding errors (Phase 5) — this is
+    /// byte-length-preserving, so it never shifts token boundaries relative
+    /// to the raw input's byte offsets.
+    ///
     /// Non-Khmer runs (Latin, digits, punctuation) are always grouped
     /// greedily into their own tokens, and whitespace separates tokens
     /// without producing one. Khmer runs are segmented using the tokenizer's
@@ -174,6 +196,13 @@ impl KhmerTokenizer {
     /// longest run of clusters that forms a dictionary word at each
     /// position, falling back to a single cluster when nothing matches).
     pub fn segment(&self, text: &str) -> Vec<String> {
+        let owned;
+        let text: &str = if self.normalization_disabled {
+            text
+        } else {
+            owned = normalize(text);
+            &owned
+        };
         let clusters = split_kcc(text);
         let n = clusters.len();
         let mut tokens: Vec<String> = Vec::new();
@@ -541,5 +570,21 @@ mod tests {
         // The real dictionary hit "ក" is untouched; only the unmatched tail
         // is re-segmented, and by the HMM's tags rather than one-per-cluster.
         assert_eq!(tk.segment("កខគង"), vec!["ក", "ខគ", "ង"]);
+    }
+
+    #[test]
+    fn normalization_lets_a_malformed_spelling_match_the_canonical_dictionary_entry() {
+        // "សិទ្ធិ" ("rights") is the canonical dictionary spelling; "សិទិ្ធ"
+        // is a common real-world typo (confirmed present in khPOS's own
+        // gold corpus) that swaps a vowel and a subscript. Normalized by
+        // default, so it should match the dictionary word whole.
+        let tk = KhmerTokenizer::from_words(["សិទ្ធិ"]);
+        assert_eq!(tk.segment("សិទិ្ធ"), vec!["សិទ្ធិ"]);
+
+        // With normalization disabled, the pre-Phase-5 behavior returns:
+        // the malformed spelling doesn't match the dictionary entry's
+        // cluster sequence, so it falls back to per-cluster tokens.
+        let tk = tk.without_normalization();
+        assert_ne!(tk.segment("សិទិ្ធ"), vec!["សិទ្ធិ"]);
     }
 }

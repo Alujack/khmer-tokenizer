@@ -19,6 +19,8 @@ with a fully correct token sequence).
 | 2026-07-01 | UnigramDp       | chamkho khmerdict.txt + khPOS-train freqs | 0.7410 | 0.7929 | 0.7661 | 0.8752 | 0.3499 | 0.3770   | khPOS OPEN-TEST |
 | 2026-07-02 | ForwardMaxMatch + HMM | chamkho khmerdict.txt + khPOS-train BMES counts | 0.7224 | 0.7498 | 0.7358 | 0.8144 | 0.4020 | 0.3770   | khPOS OPEN-TEST |
 | 2026-07-02 | UnigramDp + HMM | chamkho khmerdict.txt + khPOS-train freqs + BMES counts | 0.7611 | 0.8010 | 0.7805 | 0.8752 | 0.4014 | 0.3900   | khPOS OPEN-TEST |
+| 2026-07-02 | ForwardMaxMatch + Normalization | chamkho khmerdict.txt (59,526 words) | 0.7026 | 0.7417 | 0.7216 | 0.8144 | 0.3505 | 0.3650   | khPOS OPEN-TEST |
+| 2026-07-02 | UnigramDp + HMM + Normalization | chamkho khmerdict.txt + khPOS-train freqs + BMES counts | 0.7611 | 0.8010 | 0.7805 | 0.8752 | 0.4014 | 0.3900   | khPOS OPEN-TEST |
 
 ## Reading Phase 1's baseline (~100-word seed dict)
 
@@ -136,3 +138,46 @@ strategy to see whether that holds:
   dictionary matches, statistically-guessed OOV runs) are complementary, not
   overlapping: one only ever operates where the dictionary matched something,
   the other only where it matched nothing.
+
+## Reading Phase 5's result (orthographic normalization) — measured zero effect, root-caused
+
+`core/src/normalize.rs` reorders a mark (shifter, vowel, or other sign) that
+was typed directly before a `COENG`+consonant subscript pair to instead
+follow it — the single most common real-world Khmer encoding error. This
+isn't hypothetical: `grep`-ing khPOS's real `OPEN-TEST.word` file for the
+pattern found **21 genuine occurrences** (e.g. `សិទិ្ធ`, a well-known typo
+for `សិទ្ធិ` "rights"; `ស៊្រុន`, `ប៉្រាត`, `ប៉្រេម` — transliterated
+personal names with a shifter typed before its subscript). Zero occurrences
+of stray ZWJ/ZWNJ were found, so — since deleting characters would change
+byte length and break the eval harness's span-based scoring without also
+building an offset map back to the original text — that half of the
+original Phase 4 roadmap item was descoped to just the reordering fix; see
+`core/src/normalize.rs`'s module doc and `docs/ROADMAP.md` Phase 5 for the
+full reasoning.
+
+- **Measured effect: exactly zero** — `ForwardMaxMatch` and
+  `UnigramDp + HMM` score byte-for-byte identically with normalization on
+  vs. off (both rows above match their `without_normalization()`
+  counterparts to 4 decimal places).
+- **Root cause, confirmed by directly cross-referencing all 21 corpus
+  occurrences against `core/src/dict.txt`:** chamkho's dictionary already
+  bundles the malformed spelling as a **separate, duplicate entry** right
+  next to the canonical one for 12 of the 21 (e.g. both `កម្មសិទិ្ធ` *and*
+  `កម្មសិទ្ធិ` are independent dictionary words) — so the plain trie match
+  already succeeds without any normalization. The other 9 are personal
+  names absent from the dictionary **in either spelling** (proper names
+  aren't general-vocabulary words), so normalizing them doesn't create a
+  match where none existed. Not one of the 21 flips from wrong to right —
+  confirmed by re-implementing the same reorder rule directly against the
+  corpus and dictionary in a standalone script, independent of the Rust
+  eval harness.
+- **This still meets the roadmap's exit criteria** ("a measured,
+  non-negative effect"): zero is non-negative, and — more importantly — it
+  confirms the pass carries **zero regression risk** on the corpus and
+  dictionary this project ships. Kept on by default anyway, as defense in
+  depth: the dictionary's duplicate-entry workaround is specific to the
+  handful of words chamkho's maintainers happened to special-case, not a
+  general fix. Any custom dictionary a caller supplies (`from_words`,
+  `from_dict_str`), any word chamkho didn't special-case, and any future
+  deduplication of `dict.txt` would all still benefit from normalizing the
+  input rather than relying on that duplication.

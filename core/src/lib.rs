@@ -26,11 +26,13 @@
 
 mod hmm;
 mod kcc;
+mod normalize;
 mod strategy;
 mod trie;
 
 pub use hmm::HmmModel;
 pub use kcc::{is_khmer, split_kcc};
+pub use normalize::normalize;
 pub use strategy::Strategy;
 pub use trie::KhmerTokenizer;
 

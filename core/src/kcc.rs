@@ -11,7 +11,11 @@
 //! in naive char-by-char tokenizers.
 
 /// `U+17D2` KHMER SIGN COENG — joins a following consonant as a subscript.
-const COENG: char = '\u{17D2}';
+pub(crate) const COENG: char = '\u{17D2}';
+
+/// `U+17CC` KHMER SIGN ROBAT — the one combining mark that legitimately
+/// precedes a `COENG`+consonant subscript pair (see `crate::normalize`).
+pub(crate) const ROBAT: char = '\u{17CC}';
 
 /// A Khmer *base*: consonants (`U+1780..=U+17A2`) and independent vowels
 /// (`U+17A3..=U+17B3`). A cluster always begins with one of these.
@@ -21,7 +25,7 @@ fn is_khmer_base(c: char) -> bool {
 
 /// Dependent vowels, signs and diacritics that attach to a base, plus the
 /// zero-width joiners that may appear inside a cluster.
-fn is_khmer_combining(c: char) -> bool {
+pub(crate) fn is_khmer_combining(c: char) -> bool {
     let o = c as u32;
     matches!(o, 0x17B4..=0x17D1)   // dependent vowels & most signs
         || o == 0x17D3             // bathamasat

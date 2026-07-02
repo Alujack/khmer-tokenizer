@@ -43,11 +43,17 @@ fn run_eval() {
         std::process::exit(1);
     });
 
+    // These rows opt out of Phase 5's normalization pass (on by default as
+    // of this phase) so they keep reproducing their exact historical
+    // Phase 1-4 numbers in docs/BENCHMARKS.md. Normalization's own
+    // contribution is isolated separately, at the end of this function.
     for (label, strategy) in [
         ("ForwardMaxMatch", Strategy::ForwardMaxMatch),
         ("BiMaxMatch", Strategy::BiMaxMatch),
     ] {
-        let tokenizer = KhmerTokenizer::with_default_dict().with_strategy(strategy);
+        let tokenizer = KhmerTokenizer::with_default_dict()
+            .with_strategy(strategy)
+            .without_normalization();
         let metrics = evaluate(&examples, &tokenizer);
         report::print_table(label, &metrics);
     }
@@ -64,7 +70,8 @@ fn run_eval() {
 
     let tokenizer = KhmerTokenizer::with_default_dict()
         .with_strategy(Strategy::UnigramDp)
-        .with_frequencies(freqs.clone());
+        .with_frequencies(freqs.clone())
+        .without_normalization();
     let metrics = evaluate(&examples, &tokenizer);
     report::print_table("UnigramDp (freq: khPOS train, local-only)", &metrics);
 
@@ -75,16 +82,37 @@ fn run_eval() {
     let hmm_counts = train_hmm(&train_examples);
     let hmm_model = HmmModel::from_counts(hmm_counts.start, hmm_counts.trans, hmm_counts.emit);
 
-    let tokenizer = KhmerTokenizer::with_default_dict().with_hmm(hmm_model.clone());
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_hmm(hmm_model.clone())
+        .without_normalization();
     let metrics = evaluate(&examples, &tokenizer);
     report::print_table("ForwardMaxMatch + HMM (khPOS train, local-only)", &metrics);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_strategy(Strategy::UnigramDp)
+        .with_frequencies(freqs.clone())
+        .with_hmm(hmm_model.clone())
+        .without_normalization();
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("UnigramDp + HMM (khPOS train, local-only)", &metrics);
+
+    // Phase 5: orthographic normalization, on by default as of this phase.
+    // Isolate its contribution on top of the weakest and strongest
+    // configurations above by comparing against their without_normalization()
+    // numbers just printed.
+    let tokenizer = KhmerTokenizer::with_default_dict().with_strategy(Strategy::ForwardMaxMatch);
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("ForwardMaxMatch + Normalization", &metrics);
 
     let tokenizer = KhmerTokenizer::with_default_dict()
         .with_strategy(Strategy::UnigramDp)
         .with_frequencies(freqs)
         .with_hmm(hmm_model);
     let metrics = evaluate(&examples, &tokenizer);
-    report::print_table("UnigramDp + HMM (khPOS train, local-only)", &metrics);
+    report::print_table(
+        "UnigramDp + HMM + Normalization (khPOS train, local-only)",
+        &metrics,
+    );
 }
 
 fn run_prepare_dict() {

@@ -15,8 +15,17 @@ output:  ["សួស្តី", "អ្នក", "ទាំងអស់គ្ន�
 
 ## How it works
 
-Segmentation runs in two passes:
+Segmentation runs in three passes:
 
+0. **Normalization pass (on by default)** — [`normalize`](core/src/normalize.rs)
+   reorders a shifter, vowel, or sign that was typed directly before a
+   `COENG`+consonant subscript pair to instead follow it, per the Unicode
+   Khmer syllable structure — the single most common real-world Khmer
+   encoding error (e.g. `សិទិ្ធ` for the correct `សិទ្ធិ`). Pure character
+   reordering, so it's byte-length-preserving. Opt out with
+   `.without_normalization()` — see [BENCHMARKS.md](docs/BENCHMARKS.md) for
+   why it's kept on by default even though its measured effect on the
+   bundled dictionary is zero.
 1. **Cluster pass** — the text is grouped into *Khmer Character Clusters* (KCC):
    a base consonant or independent vowel together with any stacked subscripts
    (introduced by COENG, `U+17D2`) and dependent vowels/signs. Working on
@@ -62,7 +71,9 @@ khmerTokenizer/
 ├── core/               # khmer-tokenizer-core — the library
 │   ├── src/lib.rs      #   public API + dictionary helpers
 │   ├── src/kcc.rs      #   Khmer Character Cluster splitting
-│   ├── src/trie.rs     #   cluster trie + longest-match segmentation
+│   ├── src/normalize.rs #  orthographic normalization (Phase 5)
+│   ├── src/trie.rs     #   cluster trie + strategies + HMM fallback
+│   ├── src/hmm.rs      #   BMES HMM/Viterbi OOV fallback (Phase 4)
 │   └── src/dict.txt    #   embedded default dictionary
 └── cli/                # khmer-tokenizer-cli — the command-line tool
     └── src/main.rs
@@ -97,6 +108,10 @@ let tk = KhmerTokenizer::with_default_dict()
 // corpus with HmmModel::from_counts(start_counts, trans_counts, emit_counts).
 use khmer_tokenizer_core::HmmModel;
 let tk = KhmerTokenizer::with_default_dict().with_hmm(my_hmm_model);
+
+// Orthographic normalization runs by default; opt out if you need exact
+// byte-for-byte parity with pre-Phase-5 behavior.
+let tk = KhmerTokenizer::with_default_dict().without_normalization();
 
 // Need just the orthographic clusters?
 use khmer_tokenizer_core::split_kcc;
@@ -151,13 +166,15 @@ To use your own lexicon instead:
 cargo test
 ```
 
-Covers KCC splitting (subscripts and vowels stay attached), all three
-segmentation strategies (forward max-match, bidirectional max-match, and
-unigram DP — including a hand-built case where only DP-based scoring can
-reach the correct segmentation), the HMM OOV fallback (a hand-built BMES
-model that resegments an unmatched cluster run while leaving a real
-dictionary hit alone), mixed Khmer/Latin/number input, the
-out-of-vocabulary fallback, and dictionary loading.
+Covers orthographic normalization (reordering marks typed before a subscript,
+idempotency, byte-length preservation — see `core/src/normalize.rs`), KCC
+splitting (subscripts and vowels stay attached), all three segmentation
+strategies (forward max-match, bidirectional max-match, and unigram DP —
+including a hand-built case where only DP-based scoring can reach the
+correct segmentation), the HMM OOV fallback (a hand-built BMES model that
+resegments an unmatched cluster run while leaving a real dictionary hit
+alone), mixed Khmer/Latin/number input, the out-of-vocabulary fallback, and
+dictionary loading.
 
 ## Roadmap
 
@@ -175,9 +192,9 @@ Designed so these slot in without restructuring the workspace:
 - **CLI support for `UnigramDp` and `with_hmm`** — the CLI has no mechanism
   yet to load an external frequency table or HMM model file, so
   `--strategy` only exposes `fmm`/`bimm`.
-- **Orthographic normalization** (Phase 5) — canonicalize Unicode ordering
-  variants before segmentation, so dictionary lookups stop missing hits
-  purely because of encoding differences.
+- **A CI regression guard** (Phase 6) — run `cargo test` plus the eval
+  harness against a small, license-safe synthetic sample on every change,
+  and fail if F1 drops below a threshold.
 
 ## License
 

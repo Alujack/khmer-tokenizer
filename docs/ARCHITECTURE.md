@@ -31,7 +31,7 @@ model training later.
 | Trie             | `core/src/trie.rs`       | store the dictionary, find word matches fast | ✅ built   |
 | Tokenizer API    | `core/src/lib.rs`        | public entry point, dictionary loading       | ✅ built   |
 | CLI              | `cli/src/main.rs`        | run it from the terminal / pipes             | ✅ built   |
-| Normalizer       | `core/src/normalize.rs`  | canonicalize Unicode ordering variants       | 🔜 Phase 5 |
+| Normalizer       | `core/src/normalize.rs`  | canonicalize Unicode ordering variants       | ✅ built (Phase 5 — see below) |
 | Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | ✅ built (FMM, BiMM, UnigramDp — see below) |
 | HMM OOV fallback | `core/src/hmm.rs`      | guess boundaries where the dictionary matched nothing at all | ✅ built (Phase 4 — see below) |
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
@@ -42,17 +42,52 @@ model training later.
 
 ```mermaid
 flowchart LR
-    A[Raw Khmer text] --> B[KCC splitter]
+    A[Raw Khmer text] --> N[Normalizer<br/>Phase 5]
+    N --> B[KCC splitter]
     B --> C[Cluster trie<br/>longest match]
     C --> D[Tokens]
     E[(dict.txt<br/>embedded)] --> C
 ```
 
-What happens, in words: the text is split into clusters so a base letter never
-gets cut away from its subscripts/vowels; then the segmenter walks a trie built
-from the dictionary and, at each position, takes the longest run of clusters that
-spells a real word. No match → it emits one cluster and moves on. Deterministic,
-no model, microsecond-fast.
+What happens, in words: the text is first passed through the normalizer
+(`core/src/normalize.rs`, on by default — see below), then split into
+clusters so a base letter never gets cut away from its subscripts/vowels;
+then the segmenter walks a trie built from the dictionary and, at each
+position, takes the longest run of clusters that spells a real word. No
+match → it emits one cluster and moves on. Deterministic, no model,
+microsecond-fast.
+
+## The normalizer (built, Phase 5)
+
+Written Khmer's encoding has a well-documented failure mode: per the Unicode
+Khmer syllable structure (base, optional Robat, subscript stack, optional
+shifter, dependent vowel, other signs), a shifter/vowel/sign is sometimes
+typed or encoded *before* the subscript stack instead of after it — e.g.
+`សិទិ្ធ` for the correct `សិទ្ធិ` ("rights"). Because clustering is purely
+structural (it just consumes whatever combining marks and `COENG` pairs
+follow a base, in whatever order they appear), a malformed and a canonical
+spelling of the same word produce two *different* cluster strings — so the
+dictionary trie, keyed on exact cluster sequences, needs both spellings
+listed separately to match either one.
+
+`normalize()` fixes this before clustering ever runs: it detects a mark
+immediately followed by a `COENG`+consonant pair and moves the mark after
+it, repeating to a fixed point so it cascades through multiple stacked
+subscripts. It's pure character reordering — never adds or removes a
+character — so it's byte-length-preserving and never shifts token
+boundaries relative to the raw input's byte offsets, which matters because
+the eval harness's span-based scoring depends on that alignment.
+
+Measured contribution on khPOS + the bundled dictionary is **exactly
+zero** (see `docs/BENCHMARKS.md` Phase 5) — not because the fix doesn't
+work (its unit tests confirm it does, on real examples pulled from the
+corpus), but because chamkho's dictionary already lists many common
+malformed spellings as separate, duplicate entries right next to the
+canonical one, so plain trie matching already succeeds without any
+normalization. It's kept on by default anyway (`without_normalization()`
+opts out) as defense in depth: that duplicate-entry workaround only covers
+the specific words chamkho's maintainers happened to special-case, not any
+custom dictionary a caller supplies via `from_words`/`from_dict_str`.
 
 ## The Strategy seam (built)
 
@@ -216,7 +251,7 @@ front-end that makes a future Khmer foundation model's tokenizer clean.
 
 ```text
 khmerTokenizer/
-├── core/      # kcc, normalize, trie, strategy, score  (std-only)
+├── core/      # kcc, normalize, trie, strategy, hmm  (std-only, all built)
 ├── cli/       # terminal tool (+ --strategy, --tags)
 ├── eval/      # P/R/F1 harness over a gold corpus
 ├── xtask/     # download corpora, prepare dict, run eval

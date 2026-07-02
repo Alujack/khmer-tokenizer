@@ -72,5 +72,5 @@ jobs:
         run: cargo clippy --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown --all-targets -- -D warnings
       - name: Test in a real wasm engine (Node)
         run: wasm-pack test --node wasm
-      - name: Build the npm package
-        run: wasm-pack build wasm --release --target nodejs --out-dir pkg-node
+      - name: Build the hybrid npm package
+        run: node wasm/prepare-npm-pkg.js

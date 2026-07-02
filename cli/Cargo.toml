@@ -17,4 +17,4 @@ path = "src/main.rs"
 [dependencies]
 # `version` is required for crates.io publishing; `path` keeps local builds
 # using the workspace copy.
-khmer-tokenizer-core = { path = "../core", version = "0.2.0" }
+khmer-tokenizer-core = { path = "../core", version = "0.2.1" }

@@ -4,25 +4,25 @@ version = 4
 
 [[package]]
 name = "khmer-tokenizer-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "khmer-tokenizer-core",
 ]
 
 [[package]]
 name = "khmer-tokenizer-core"
-version = "0.2.0"
+version = "0.2.1"
 
 [[package]]
 name = "khmer-tokenizer-eval"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "khmer-tokenizer-core",
 ]
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "khmer-tokenizer-core",
  "khmer-tokenizer-eval",

@@ -1,6 +1,6 @@
 [package]
 name = "khmer-tokenizer-py"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Alujack/khmer-tokenizer"
@@ -14,7 +14,7 @@ name = "khmer_tokenizer"
 crate-type = ["cdylib"]
 
 [dependencies]
-khmer-tokenizer-core = { path = "../core", version = "0.2.0" }
+khmer-tokenizer-core = { path = "../core", version = "0.2.1" }
 # abi3-py39: one wheel works on every CPython >= 3.9.
 pyo3 = { version = "0.29", features = ["extension-module", "abi3-py39"] }
 

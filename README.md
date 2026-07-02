@@ -20,11 +20,15 @@ output:  ["សួស្តី", "អ្នក", "ទាំងអស់គ្ន�
 ## Install
 
 ```bash
-# The library, in your Rust project
+# The Rust library, in your Rust project
 cargo add khmer-tokenizer-core
 
 # The command-line tool
 cargo install khmer-tokenizer-cli   # installs the `khmer-tokenizer` binary
+
+# The Python bindings (from a checkout, until published to PyPI)
+pip install maturin && cd py && maturin build --release \
+  && pip install target/wheels/khmer_tokenizer-*.whl
 ```
 
 API docs: [docs.rs/khmer-tokenizer-core](https://docs.rs/khmer-tokenizer-core)
@@ -99,8 +103,11 @@ khmerTokenizer/
 │   ├── src/trie.rs     #   cluster trie + strategies + HMM fallback
 │   ├── src/hmm.rs      #   BMES HMM/Viterbi OOV fallback (Phase 4)
 │   └── src/dict.txt    #   embedded default dictionary
-└── cli/                # khmer-tokenizer-cli — the command-line tool
-    └── src/main.rs
+├── cli/                # khmer-tokenizer-cli — the command-line tool
+│   └── src/main.rs
+└── py/                 # khmer-tokenizer on PyPI — PyO3/maturin bindings
+    ├── src/lib.rs      #   (outside the Cargo workspace: needs pyo3)
+    └── tests/          #   pytest suite
 ```
 
 ## Library usage
@@ -168,6 +175,32 @@ khmer-tokenizer --zwsp "សួស្តីអ្នកទាំងអស់គ�
 echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | khmer-tokenizer
 ```
 
+## Python usage
+
+The [`py/`](https://github.com/Alujack/khmer-tokenizer/tree/master/py)
+crate exposes the same engine to Python via PyO3 (abi3 wheel, works on any
+CPython ≥ 3.9, no Python dependencies):
+
+```python
+from khmer_tokenizer import KhmerTokenizer, split_kcc, normalize
+
+tk = KhmerTokenizer()  # embedded default dictionary, forward max-match
+tk.segment("សួស្តីអ្នកទាំងអស់គ្នា")
+# ['សួស្តី', 'អ្នក', 'ទាំងអស់គ្នា']
+
+KhmerTokenizer(strategy="bimm")                    # bidirectional max-match
+KhmerTokenizer(words=["ភាសា", "ខ្មែរ"])            # custom word list
+KhmerTokenizer(strategy="unigram",
+               frequencies={"ភាសា": 500})          # frequency-scored DP
+
+split_kcc("ខ្មែរ")    # ['ខ្មែ', 'រ']
+normalize("សិទិ្ធ")   # 'សិទ្ធិ'
+```
+
+This is the pre-tokenizer path for LLM pipelines: segment your corpus,
+join with spaces (or ZWSP), then train BPE/SentencePiece on the result so
+the learned subwords respect real Khmer word structure.
+
 ## Dictionary
 
 Segmentation quality is bounded by the dictionary. The bundled
@@ -213,10 +246,13 @@ below a floor. [CI](https://github.com/Alujack/khmer-tokenizer/blob/master/.gith
 
 Designed so these slot in without restructuring the workspace:
 
+- **Publish the Python bindings to PyPI** — the `py/` crate is built and
+  tested (see "Python usage" above); the `khmer-tokenizer` name is
+  confirmed available on PyPI, pending a maturin release workflow.
 - **WASM bindings** — a `wasm/` crate using `wasm-bindgen` + `wasm-pack` to run
   the engine in browsers and Node, publishable to npm.
-- **Python bindings** — a `py/` crate using PyO3 so it drops into existing
-  `khnlp`-style pipelines.
+- **A statistical BMES tagger tier (CRF-class)** — see
+  [docs/RESEARCH-3.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/RESEARCH-3.md) §4.
 - **Benchmarks** — a Criterion suite to track throughput.
 - **A bundleable frequency table** for `UnigramDp` — no commercially-clean,
   bundleable corpus-frequency source has been found yet (see

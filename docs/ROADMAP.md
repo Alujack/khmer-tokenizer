@@ -255,10 +255,19 @@ comes next:
       feature-richer tagger trained the same local-only way would close
       part of the accuracy gap without abandoning the zero-dependency
       posture. Same NC-license constraint: no trained model ships.
-- [ ] **Python (PyO3) and WASM bindings.** The verified downstream finding
-      (word segmentation before Khmer LLM/NLG pretraining measurably helps)
-      is only actionable from Python pipelines. Raises the priority of the
-      long-standing README roadmap item.
+- [x] **Python (PyO3) bindings** — built as `py/` (2026-07-02): a
+      maturin/PyO3 crate deliberately *outside* the Cargo workspace (so
+      core/cli/eval/xtask keep their zero-third-party-dependency posture
+      and their CI needs no Python toolchain), exposing
+      `KhmerTokenizer(words=…, strategy=…, frequencies=…, normalization=…)`,
+      `segment`, `split_kcc`, `normalize`, and `is_khmer`. abi3-py39 wheel
+      (one wheel per platform for every CPython ≥ 3.9), 13-test pytest
+      suite mirroring the core crate's behavioral tests, own CI job
+      (clippy + maturin build + pytest). The `khmer-tokenizer` name is
+      confirmed available on PyPI; actually publishing there (maturin
+      release workflow + PyPI account) is the remaining step.
+- [ ] **WASM bindings** (`wasm/` via wasm-bindgen) — still pending; same
+      motivation, browser/Node audience.
 - [ ] **Explicit non-goal:** chasing neural-SOTA accuracy (UnifiedCut:
       F1 0.985 on khPOS — but OOV recall still only 0.613) inside this
       crate. Users needing that should use a neural tool; this crate's

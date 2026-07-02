@@ -37,7 +37,7 @@ model training later.
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Regression guard | `eval/tests/regression.rs` + CI | fail the build if accuracy silently rots | ✅ built (Phase 6 — see below) |
 | Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
-| Bindings         | `wasm/`, `py/`         | run from JS/browser and Python               | 🔭 future  |
+| Bindings         | `py/` (PyO3), `wasm/`  | run from Python and JS/browser               | ✅ Python built (PyPI-ready, own CI job); WASM 🔭 future |
 
 ## Today's default pipeline (`Strategy::ForwardMaxMatch`)
 
@@ -291,7 +291,8 @@ khmerTokenizer/
 ├── xtask/     # download corpora, prepare dict, run eval
 ├── model/     # OPTIONAL trained CRF/ONNX segmenter (feature-gated)
 ├── wasm/      # wasm-bindgen → npm/browser
-├── py/        # PyO3 → pip, for data pipelines
+├── py/        # PyO3 → pip, for data pipelines (BUILT — outside the Cargo
+│              #   workspace so core/cli/eval/xtask stay zero-dependency)
 ├── data/      # downloaded corpora (gitignored, NC-licensed)
 └── docs/      # RESEARCH, ROADMAP, ARCHITECTURE, LEARNING, BENCHMARKS
 ```

@@ -1,6 +1,12 @@
 # Rust build artifacts
 /target
+/py/target
 **/*.rs.bk
+
+# Python build/test artifacts (py/ bindings)
+__pycache__/
+.pytest_cache/
+*.egg-info/
 
 # Editor / OS
 .DS_Store

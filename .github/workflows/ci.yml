@@ -29,3 +29,28 @@ jobs:
         run: cargo test --workspace --verbose
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # The py/ crate is deliberately outside the Cargo workspace (it needs a
+  # Python toolchain and pyo3, while the workspace stays zero-dependency),
+  # so it gets its own job — same Phase 6 ethos: bindings can't silently rot.
+  python-bindings:
+    name: Python bindings (py/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Clippy (py crate)
+        run: cargo clippy --manifest-path py/Cargo.toml --all-targets -- -D warnings
+      - name: Build and install the wheel
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install maturin pytest
+          cd py && maturin develop
+      - name: Run pytest
+        run: |
+          . .venv/bin/activate
+          cd py && pytest tests/ -v

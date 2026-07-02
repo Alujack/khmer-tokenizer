@@ -302,3 +302,44 @@ Reading it:
 - Historical rows were re-run and **reproduce byte-for-byte** — the
   fallback-seam refactor (`apply_hmm_fallback` → `apply_oov_fallback`)
   changed no existing behavior.
+
+### Cross-corpus honesty check + adversarial hardening
+
+The F1 0.9300 above is **in-domain**: khPOS's train and test splits share
+annotators and segmentation conventions, which flatters any learned model.
+To measure real generalization, the same khPOS-trained model (identical
+weights, 5 epochs, deterministic) was evaluated against kh_data_10000b —
+80,216 silver-reference sentences from a domain it never saw:
+
+| Configuration (kh10000b, silver) | P | R | F1 | R-iv | R-oov | WordAcc |
+|---|---|---|---|---|---|---|
+| BiMaxMatch (best dictionary row) | 0.7101 | 0.7082 | 0.7092 | 0.7879 | 0.3370 | 0.0466 |
+| FMM + Tagger fallback (CROSS)    | 0.7427 | 0.7199 | 0.7311 | 0.7836 | 0.4235 | 0.0507 |
+| Tagger full (CROSS)              | 0.8794 | 0.8531 | **0.8660** | 0.8889 | 0.6863 | 0.1481 |
+
+Reading it honestly:
+
+- The full tagger **loses 6.4 F1 points out of domain** (0.9300 → 0.8660)
+  and a quarter of its OOV recall (0.8976 → 0.6863). That's the real
+  domain gap, stated up front.
+- It still beats the best dictionary configuration on this corpus by
+  **+0.157 F1** and triples word accuracy — the advantage survives domain
+  transfer; it isn't a split artifact.
+- Usual silver caveat: kh10000b's reference is machine-produced, so this
+  measures agreement, not verified accuracy — but both tiers are measured
+  against the *same* reference, so the comparison between them stands.
+
+The same skepticism pass adversarially probed the implementation and
+found (and fixed) two real bugs, now regression-tested:
+
+1. **Serialization round-trip violation** — `TaggerModel::train` accepts
+   arbitrary words; a tab or newline inside one ended up inside a feature
+   key and produced a model file `from_text` itself rejected. Keys are now
+   escaped (`\t`/`\n`/`\r`/`\\`).
+2. **NaN-poisoned models loaded silently** — `"NaN"`/`"inf"` parse as
+   valid `f64`, and NaN makes every Viterbi comparison false. `from_text`
+   now rejects non-finite weights at load.
+
+Also probed and confirmed fine: zero-epoch (all-zero-weight) models
+degrade to one-token-per-cluster; a 5,000-cluster single run decodes in
+~26 ms.

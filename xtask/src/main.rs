@@ -196,6 +196,36 @@ fn run_eval_kh10000b() {
     let tokenizer = KhmerTokenizer::with_default_dict().with_strategy(Strategy::ForwardMaxMatch);
     let metrics = evaluate(&result.examples, &tokenizer);
     report::print_table("ForwardMaxMatch + Normalization", &metrics);
+
+    // Cross-corpus honesty check for the tagger tier: in-domain
+    // (khPOS-trained, khPOS-tested) the full tagger reaches F1 0.93, but
+    // that shares annotators and conventions between train and test. These
+    // rows measure the *same khPOS-trained model* against this corpus
+    // instead — a domain it never saw. khPOS is auto-downloadable (unlike
+    // kh_data_10000b itself), so ensure_khpos here is fine.
+    let khpos_dir = download::ensure_khpos(Path::new("data")).unwrap_or_else(|e| {
+        eprintln!("error: could not fetch khPOS for the cross-corpus tagger rows: {e}");
+        std::process::exit(1);
+    });
+    let train_examples =
+        corpus::load_khpos_dir(&khpos_dir, Split::Train).unwrap_or_else(|e| {
+            eprintln!("error: could not read khPOS train split: {e}");
+            std::process::exit(1);
+        });
+    let tagger_model = train_tagger(&train_examples, 5);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_tagger(tagger_model.clone())
+        .without_normalization();
+    let metrics = evaluate(&result.examples, &tokenizer);
+    report::print_table("FMM + Tagger fallback (khPOS-trained, CROSS-corpus)", &metrics);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_strategy(Strategy::Tagger)
+        .with_tagger(tagger_model)
+        .without_normalization();
+    let metrics = evaluate(&result.examples, &tokenizer);
+    report::print_table("Tagger full (khPOS-trained, CROSS-corpus)", &metrics);
 }
 
 fn run_prepare_dict() {

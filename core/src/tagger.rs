@@ -372,7 +372,9 @@ impl TaggerModel {
     /// Serialize to a plain-text format (`khmer-tokenizer-tagger v1`):
     /// tab-separated lines, one per weight vector, loadable with
     /// [`from_text`](TaggerModel::from_text). Feature lines are sorted so
-    /// the output is byte-identical run-to-run.
+    /// the output is byte-identical run-to-run. Feature keys have `\`,
+    /// tab, newline, and carriage return escaped, so a model trained on
+    /// words containing them still round-trips.
     pub fn to_text(&self) -> String {
         let fmt = |ws: &[f64; NUM_STATES]| {
             ws.iter()
@@ -388,7 +390,11 @@ impl TaggerModel {
         let mut feats: Vec<&String> = self.weights.keys().collect();
         feats.sort();
         for feat in feats {
-            out.push_str(&format!("F\t{feat}\t{}\n", fmt(&self.weights[feat])));
+            out.push_str(&format!(
+                "F\t{}\t{}\n",
+                escape_key(feat),
+                fmt(&self.weights[feat])
+            ));
         }
         out
     }
@@ -415,9 +421,16 @@ impl TaggerModel {
             }
             let mut ws = [0.0; NUM_STATES];
             for (i, f) in fields.iter().enumerate() {
-                ws[i] = f
+                let w = f
                     .parse::<f64>()
                     .map_err(|e| format!("line {line_no}: bad weight {f:?}: {e}"))?;
+                // "NaN"/"inf" parse successfully but poison every Viterbi
+                // comparison — a corrupted model file must fail here, at
+                // load, not decode garbage later.
+                if !w.is_finite() {
+                    return Err(format!("line {line_no}: non-finite weight {f:?}"));
+                }
+                ws[i] = w;
             }
             Ok(ws)
         };
@@ -444,7 +457,7 @@ impl TaggerModel {
                         return Err(format!("line {line_no}: malformed feature line"));
                     }
                     let ws = parse4(&fields[2..], line_no)?;
-                    model.weights.insert(fields[1].to_string(), ws);
+                    model.weights.insert(unescape_key(fields[1]), ws);
                 }
                 other => return Err(format!("line {line_no}: unknown record type {other:?}")),
             }
@@ -456,6 +469,47 @@ impl TaggerModel {
     pub fn feature_count(&self) -> usize {
         self.weights.len()
     }
+}
+
+/// Escape a feature key for the tab-separated, line-based `to_text` format.
+/// Keys embed raw cluster text, and `TaggerModel::train` accepts arbitrary
+/// words — a tab or newline inside one must not corrupt the model file.
+fn escape_key(key: &str) -> String {
+    let mut out = String::with_capacity(key.len());
+    for c in key.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Inverse of [`escape_key`]. Unknown escapes pass through as-is.
+fn unescape_key(escaped: &str) -> String {
+    let mut out = String::with_capacity(escaped.len());
+    let mut chars = escaped.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('\\') => out.push('\\'),
+            Some('t') => out.push('\t'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -514,6 +568,36 @@ mod tests {
         assert!(TaggerModel::from_text("not a model").is_err());
         assert!(TaggerModel::from_text("khmer-tokenizer-tagger v1\nX\t1\t2\t3\t4").is_err());
         assert!(TaggerModel::from_text("khmer-tokenizer-tagger v1\nS\t1\t2").is_err());
+    }
+
+    #[test]
+    fn from_text_rejects_non_finite_weights() {
+        // "NaN" and "inf" parse as f64 — but NaN poisons every Viterbi
+        // comparison, so a corrupted model must fail at load, loudly.
+        for bad in ["NaN", "inf", "-inf"] {
+            let text = format!("khmer-tokenizer-tagger v1\nS\t{bad}\t0\t0\t0");
+            assert!(TaggerModel::from_text(&text).is_err(), "accepted {bad}");
+        }
+    }
+
+    #[test]
+    fn keys_with_tabs_and_newlines_still_round_trip() {
+        // train() accepts arbitrary words; a tab or newline inside one ends
+        // up inside feature keys and must not corrupt the line-based format.
+        let sentences = vec![vec!["ក\tx".to_string(), "ក\ny".to_string(), "ខគ".to_string()]];
+        let model = TaggerModel::train(&sentences, 3);
+        let restored = TaggerModel::from_text(&model.to_text()).unwrap();
+        assert_eq!(model.to_text(), restored.to_text());
+    }
+
+    #[test]
+    fn zero_epoch_model_degrades_to_one_token_per_cluster() {
+        let model = TaggerModel::train(&corpus(), 0);
+        let clusters: Vec<String> = ["ខ", "គ"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(
+            model.segment_clusters(&clusters),
+            vec![vec!["ខ".to_string()], vec!["គ".to_string()]]
+        );
     }
 
     #[test]

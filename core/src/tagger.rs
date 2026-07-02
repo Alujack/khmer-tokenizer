@@ -158,6 +158,65 @@ impl XorShift64 {
     }
 }
 
+#[allow(clippy::needless_range_loop)]
+fn viterbi_decode(
+    clusters: &[String],
+    start: &[f64; NUM_STATES],
+    trans: &[[f64; NUM_STATES]; NUM_STATES],
+    weights: &HashMap<String, [Cell; NUM_STATES]>,
+) -> Vec<usize> {
+    let n = clusters.len();
+    let mut score = vec![[f64::NEG_INFINITY; NUM_STATES]; n];
+    let mut back = vec![[0usize; NUM_STATES]; n];
+
+    let emit_score = |i: usize| -> [f64; NUM_STATES] {
+        let mut scores = [0.0; NUM_STATES];
+        for feat in features(clusters, i) {
+            if let Some(cells) = weights.get(&feat) {
+                for s in 0..NUM_STATES {
+                    scores[s] += cells[s].weight;
+                }
+            }
+        }
+        scores
+    };
+
+    let first_emit = emit_score(0);
+    for s in 0..NUM_STATES {
+        score[0][s] = start[s] + first_emit[s];
+    }
+    for t in 1..n {
+        let emit = emit_score(t);
+        for s in 0..NUM_STATES {
+            let mut best_score = f64::NEG_INFINITY;
+            let mut best_prev = 0;
+            for ps in 0..NUM_STATES {
+                let candidate = score[t - 1][ps] + trans[ps][s];
+                if candidate > best_score {
+                    best_score = candidate;
+                    best_prev = ps;
+                }
+            }
+            back[t][s] = best_prev;
+            score[t][s] = best_score + emit[s];
+        }
+    }
+
+    let mut best_final = 0;
+    for s in 1..NUM_STATES {
+        if score[n - 1][s] > score[n - 1][best_final] {
+            best_final = s;
+        }
+    }
+
+    let mut tags = vec![0usize; n];
+    tags[n - 1] = best_final;
+    for t in (1..n).rev() {
+        tags[t - 1] = back[t][tags[t]];
+    }
+    tags
+}
+
 impl TaggerModel {
     /// Train from gold-segmented sentences (each a `Vec` of words in
     /// sentence order; non-Khmer words act as run boundaries and are
@@ -189,8 +248,17 @@ impl TaggerModel {
                 step += 1;
 
                 // Decode with the *current* (non-averaged) weights.
-                let current = Self::snapshot(&start, &trans, &weights);
-                let pred = current.viterbi_tags(clusters);
+                let mut current_start = [0.0; NUM_STATES];
+                for s in 0..NUM_STATES {
+                    current_start[s] = start[s].weight;
+                }
+                let mut current_trans = [[0.0; NUM_STATES]; NUM_STATES];
+                for s in 0..NUM_STATES {
+                    for j in 0..NUM_STATES {
+                        current_trans[s][j] = trans[s][j].weight;
+                    }
+                }
+                let pred = viterbi_decode(clusters, &current_start, &current_trans, &weights);
                 if &pred == gold {
                     continue;
                 }
@@ -237,38 +305,6 @@ impl TaggerModel {
             }
         }
         model
-    }
-
-    /// Current (non-averaged) weights as a decodable model, for use inside
-    /// the training loop.
-    #[allow(clippy::needless_range_loop)] // parallel-structure indexing, as in train()
-    fn snapshot(
-        start: &[Cell; NUM_STATES],
-        trans: &[[Cell; NUM_STATES]; NUM_STATES],
-        weights: &HashMap<String, [Cell; NUM_STATES]>,
-    ) -> TaggerModel {
-        let mut m = TaggerModel::default();
-        for s in 0..NUM_STATES {
-            m.start[s] = start[s].weight;
-            for j in 0..NUM_STATES {
-                m.trans[s][j] = trans[s][j].weight;
-            }
-        }
-        m.weights = weights
-            .iter()
-            .map(|(k, cells)| {
-                (
-                    k.clone(),
-                    [
-                        cells[0].weight,
-                        cells[1].weight,
-                        cells[2].weight,
-                        cells[3].weight,
-                    ],
-                )
-            })
-            .collect();
-        m
     }
 
     /// Summed feature score for each tag at position `i`.

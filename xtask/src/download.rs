@@ -57,3 +57,51 @@ fn clone_shallow(
 
     Ok(repo_dir)
 }
+
+/// Ensure a local ALT treebank checkout exists under `data_dir/alt/km-nova`,
+/// downloading and unzipping it on first use. Returns the checkout directory.
+pub fn ensure_alt(data_dir: &Path) -> io::Result<PathBuf> {
+    let alt_dir = data_dir.join("alt");
+    let check_file = alt_dir.join("km-nova/data_km.km-tok.nova");
+    if check_file.is_file() {
+        return Ok(alt_dir);
+    }
+
+    std::fs::create_dir_all(&alt_dir)?;
+    let zip_path = alt_dir.join("km-nova.zip");
+    
+    // Download zip using curl
+    let status = Command::new("curl")
+        .args([
+            "-L",
+            "https://zenodo.org/api/records/3937914/files/km-nova.zip/content",
+            "-o",
+        ])
+        .arg(&zip_path)
+        .status()?;
+
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "download of ALT km-nova.zip failed ({status})"
+        )));
+    }
+
+    // Unzip the file
+    let status = Command::new("unzip")
+        .arg("-o")
+        .arg(&zip_path)
+        .arg("-d")
+        .arg(&alt_dir)
+        .status()?;
+
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "unzip of ALT km-nova.zip failed ({status})"
+        )));
+    }
+
+    // Remove the zip file to clean up
+    let _ = std::fs::remove_file(&zip_path);
+
+    Ok(alt_dir)
+}

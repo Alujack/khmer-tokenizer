@@ -20,7 +20,7 @@ const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 for (const license of ["LICENSE-MIT", "LICENSE-APACHE"]) {
   if (!pkg.files.includes(license)) pkg.files.push(license);
 }
-pkg.keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cambodia", "wasm"];
+pkg.keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cambodia", "wasm", "khmerTokenizer", "khmer-tokenizer", "khmer_tokenizer"];
 pkg.homepage = "https://github.com/Alujack/khmer-tokenizer";
 pkg.repository = {
   type: "git",

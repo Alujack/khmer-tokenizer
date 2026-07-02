@@ -69,6 +69,65 @@ pub fn load_khpos_dir(repo_dir: &Path, split: Split) -> io::Result<Vec<Example>>
     Ok(parse_khpos(&raw))
 }
 
+/// Which ALT split to load.
+#[derive(Clone, Copy)]
+pub enum AltSplit {
+    /// Approximately 90% of articles.
+    Train,
+    /// Approximately 10% of articles.
+    Test,
+}
+
+/// Parse ALT `.nova` tokenized file contents into evaluation examples.
+pub fn parse_alt(raw: &str, split: AltSplit) -> Vec<Example> {
+    raw.lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() != 2 {
+                return None;
+            }
+            let id_part = parts[0];
+            let text_part = parts[1];
+            
+            let id_subparts: Vec<&str> = id_part.split('.').collect();
+            if id_subparts.len() < 2 {
+                return None;
+            }
+            let article_id_str = id_subparts[1];
+            let article_id = article_id_str.parse::<u64>().unwrap_or(0);
+            
+            let is_test = article_id % 10 == 0;
+            match split {
+                AltSplit::Train => {
+                    if is_test {
+                        return None;
+                    }
+                }
+                AltSplit::Test => {
+                    if !is_test {
+                        return None;
+                    }
+                }
+            }
+
+            let gold_tokens: Vec<String> = text_part
+                .split_whitespace()
+                .map(|tok| tok.to_string())
+                .collect();
+            let input = gold_tokens.concat();
+            Some(Example { input, gold_tokens })
+        })
+        .collect()
+}
+
+/// Load an ALT split from data directory containing `km-nova/data_km.km-tok.nova`.
+pub fn load_alt_dir(alt_dir: &Path, split: AltSplit) -> io::Result<Vec<Example>> {
+    let path = alt_dir.join("km-nova/data_km.km-tok.nova");
+    let raw = fs::read_to_string(path)?;
+    Ok(parse_alt(&raw, split))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,5 +152,20 @@ mod tests {
     fn skips_blank_lines() {
         let examples = parse_khpos("សួស្តី\n\nអ្នក\n");
         assert_eq!(examples.len(), 2);
+    }
+
+    #[test]
+    fn parses_alt_format_and_splits_deterministically() {
+        let raw = "SNT.80188.1\tអ៊ីតាលី បាន ឈ្នះ\nSNT.80180.2\tព័រទុយហ្គាល់ 31-5\n";
+        
+        let train = parse_alt(raw, AltSplit::Train);
+        assert_eq!(train.len(), 1);
+        assert_eq!(train[0].gold_tokens, vec!["អ៊ីតាលី", "បាន", "ឈ្នះ"]);
+        assert_eq!(train[0].input, "អ៊ីតាលីបានឈ្នះ");
+        
+        let test = parse_alt(raw, AltSplit::Test);
+        assert_eq!(test.len(), 1);
+        assert_eq!(test[0].gold_tokens, vec!["ព័រទុយហ្គាល់", "31-5"]);
+        assert_eq!(test[0].input, "ព័រទុយហ្គាល់31-5");
     }
 }

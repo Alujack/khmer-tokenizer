@@ -41,20 +41,22 @@ struct KhmerTokenizer {
 #[pymethods]
 impl KhmerTokenizer {
     #[new]
-    #[pyo3(signature = (words=None, *, strategy="fmm", frequencies=None, normalization=true))]
+    #[pyo3(signature = (words=None, *, strategy="fmm", frequencies=None, tagger=None, normalization=true))]
     fn new(
         words: Option<Vec<String>>,
         strategy: &str,
         frequencies: Option<HashMap<String, u64>>,
+        tagger: Option<String>,
         normalization: bool,
     ) -> PyResult<Self> {
         let strategy = match strategy {
             "fmm" => core::Strategy::ForwardMaxMatch,
             "bimm" => core::Strategy::BiMaxMatch,
             "unigram" => core::Strategy::UnigramDp,
+            "tagger" => core::Strategy::Tagger,
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown strategy '{other}' (expected 'fmm', 'bimm', or 'unigram')"
+                    "unknown strategy '{other}' (expected 'fmm', 'bimm', 'unigram', or 'tagger')"
                 )))
             }
         };
@@ -67,6 +69,11 @@ impl KhmerTokenizer {
 
         if let Some(frequencies) = frequencies {
             inner = inner.with_frequencies(frequencies);
+        }
+        if let Some(tagger_str) = tagger {
+            let model = core::TaggerModel::from_text(&tagger_str)
+                .map_err(|e| PyValueError::new_err(format!("invalid tagger model: {e}")))?;
+            inner = inner.with_tagger(model);
         }
         if !normalization {
             inner = inner.without_normalization();

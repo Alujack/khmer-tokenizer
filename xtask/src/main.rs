@@ -24,7 +24,10 @@ fn main() {
         Some("eval") => run_eval(),
         Some("eval-kh10000b") => run_eval_kh10000b(),
         Some("prepare-dict") => run_prepare_dict(),
-        Some("train-tagger") => run_train_tagger(args.next()),
+        Some("train-tagger") => {
+            let sub_args: Vec<String> = args.collect();
+            run_train_tagger(&sub_args);
+        }
         _ => print_usage(),
     }
 }
@@ -35,7 +38,7 @@ fn print_usage() {
     eprintln!("  eval               Download khPOS and print P/R/F1 for the current tokenizer");
     eprintln!("  eval-kh10000b      Evaluate against the local kh_data_10000b corpus (silver reference)");
     eprintln!("  prepare-dict       Rebuild core/src/dict.txt from chamkho's khmerdict.txt");
-    eprintln!("  train-tagger OUT   Train a TaggerModel from khPOS and write it to OUT (local-only)");
+    eprintln!("  train-tagger [--alt] OUT   Train a TaggerModel from khPOS (or ALT) and write it to OUT");
 }
 
 fn run_eval() {
@@ -242,20 +245,42 @@ fn run_eval_kh10000b() {
 /// like the in-memory training the eval harness already does. The output is
 /// never committed (write it under `data/`, which is gitignored, or
 /// anywhere outside the repo).
-fn run_train_tagger(out_path: Option<String>) {
+fn run_train_tagger(args: &[String]) {
+    let mut use_alt = false;
+    let mut out_path = None;
+
+    for arg in args {
+        if arg == "--alt" {
+            use_alt = true;
+        } else if out_path.is_none() {
+            out_path = Some(arg.clone());
+        }
+    }
+
     let Some(out_path) = out_path else {
-        eprintln!("error: train-tagger requires an output path, e.g. `cargo xtask train-tagger data/tagger.txt`");
+        eprintln!("error: train-tagger requires an output path, e.g. `cargo xtask train-tagger [--alt] data/tagger.txt`");
         std::process::exit(1);
     };
 
-    let repo_dir = download::ensure_khpos(Path::new("data")).unwrap_or_else(|e| {
-        eprintln!("error: could not fetch khPOS corpus: {e}");
-        std::process::exit(1);
-    });
-    let train_examples = corpus::load_khpos_dir(&repo_dir, Split::Train).unwrap_or_else(|e| {
-        eprintln!("error: could not read khPOS train split: {e}");
-        std::process::exit(1);
-    });
+    let train_examples = if use_alt {
+        let alt_dir = download::ensure_alt(Path::new("data")).unwrap_or_else(|e| {
+            eprintln!("error: could not fetch ALT corpus: {e}");
+            std::process::exit(1);
+        });
+        khmer_tokenizer_eval::corpus::load_alt_dir(&alt_dir, khmer_tokenizer_eval::corpus::AltSplit::Train).unwrap_or_else(|e| {
+            eprintln!("error: could not read ALT train split: {e}");
+            std::process::exit(1);
+        })
+    } else {
+        let repo_dir = download::ensure_khpos(Path::new("data")).unwrap_or_else(|e| {
+            eprintln!("error: could not fetch khPOS corpus: {e}");
+            std::process::exit(1);
+        });
+        corpus::load_khpos_dir(&repo_dir, Split::Train).unwrap_or_else(|e| {
+            eprintln!("error: could not read khPOS train split: {e}");
+            std::process::exit(1);
+        })
+    };
 
     let model = train_tagger(&train_examples, 5);
     let text = model.to_text();
@@ -265,16 +290,24 @@ fn run_train_tagger(out_path: Option<String>) {
     });
 
     println!(
-        "trained tagger on {} khPOS sentences ({} features); wrote {} ({} bytes).",
+        "trained tagger on {} {} sentences ({} features); wrote {} ({} bytes).",
         train_examples.len(),
+        if use_alt { "ALT" } else { "khPOS" },
         model.feature_count(),
         out_path,
         text.len(),
     );
-    println!(
-        "NOTE: this model is derived from khPOS (CC BY-NC-SA) -- non-commercial, \
-         never commit it. Use with `khmer-tokenizer --strategy tagger --tagger {out_path}`."
-    );
+    if !use_alt {
+        println!(
+            "NOTE: this model is derived from khPOS (CC BY-NC-SA) -- non-commercial, \
+             never commit it. Use with `khmer-tokenizer --strategy tagger --tagger {out_path}`."
+        );
+    } else {
+        println!(
+            "NOTE: this model is derived from ALT (CC BY-NC-SA) -- non-commercial, \
+             never commit it. Use with `khmer-tokenizer --strategy tagger --tagger {out_path}`."
+        );
+    }
 }
 
 fn run_prepare_dict() {

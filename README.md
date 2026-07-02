@@ -6,7 +6,7 @@
 [![PyPI](https://img.shields.io/pypi/v/khmer-tokenizer.svg)](https://pypi.org/project/khmer-tokenizer/)
 [![npm](https://img.shields.io/npm/v/kh-tokenizer.svg)](https://www.npmjs.com/package/kh-tokenizer)
 
-A fast, dependency-free **Khmer word segmenter** written in Rust.
+A fast, dependency-free **Khmer word segmenter** (also known as **khmerTokenizer** or **khmer_tokenizer**) written in Rust.
 
 Written Khmer has no spaces between words, so before you can search, index,
 spell-check, translate, or train a model on Khmer text, you first have to split

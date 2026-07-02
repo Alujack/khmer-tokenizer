@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT OR Apache-2.0"
 authors = [{ name = "Yoeurn Yan", email = "yoeurn.yan.dev@gmail.com" }]
-keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cambodia"]
+keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cambodia", "khmerTokenizer", "khmer-tokenizer"]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",

@@ -1,7 +1,7 @@
 [package]
 name = "khmer-tokenizer-cli"
 description = "Command-line Khmer word segmenter (installs the `khmer-tokenizer` binary)."
-keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cli"]
+keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cli", "khmerTokenizer", "khmer-tokenizer"]
 categories = ["text-processing", "command-line-utilities"]
 readme = "../README.md"
 version.workspace = true

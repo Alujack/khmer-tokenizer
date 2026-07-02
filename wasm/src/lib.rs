@@ -57,10 +57,10 @@ impl KhmerTokenizer {
             let key = key.as_string().unwrap_or_default();
             if !matches!(
                 key.as_str(),
-                "words" | "strategy" | "frequencies" | "normalization"
+                "words" | "strategy" | "frequencies" | "tagger" | "normalization"
             ) {
                 return Err(JsError::new(&format!(
-                    "unknown option {key:?}; expected words, strategy, frequencies, normalization"
+                    "unknown option {key:?}; expected words, strategy, frequencies, tagger, normalization"
                 )));
             }
         }
@@ -90,9 +90,10 @@ impl KhmerTokenizer {
                 "fmm" => core::Strategy::ForwardMaxMatch,
                 "bimm" => core::Strategy::BiMaxMatch,
                 "unigram" => core::Strategy::UnigramDp,
+                "tagger" => core::Strategy::Tagger,
                 other => {
                     return Err(JsError::new(&format!(
-                        "unknown strategy {other:?}; expected \"fmm\", \"bimm\", or \"unigram\""
+                        "unknown strategy {other:?}; expected \"fmm\", \"bimm\", \"unigram\", or \"tagger\""
                     )))
                 }
             };
@@ -120,6 +121,15 @@ impl KhmerTokenizer {
                 counts.push((word, count as u64));
             }
             tokenizer = tokenizer.with_frequencies(counts);
+        }
+
+        if let Some(v) = opt(&options, "tagger") {
+            let tagger_str = v
+                .as_string()
+                .ok_or_else(|| JsError::new("tagger must be a string"))?;
+            let model = core::TaggerModel::from_text(&tagger_str)
+                .map_err(|e| JsError::new(&format!("invalid tagger model: {e}")))?;
+            tokenizer = tokenizer.with_tagger(model);
         }
 
         if let Some(v) = opt(&options, "normalization") {

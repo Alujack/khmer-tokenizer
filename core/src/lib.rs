@@ -32,7 +32,7 @@ mod tagger;
 mod trie;
 
 pub use hmm::HmmModel;
-pub use kcc::{is_khmer, split_kcc};
+pub use kcc::{is_khmer, is_khmer_base, split_kcc};
 pub use normalize::normalize;
 pub use strategy::Strategy;
 pub use tagger::TaggerModel;

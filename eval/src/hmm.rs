@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use khmer_tokenizer_core::{is_khmer, split_kcc};
+use khmer_tokenizer_core::{is_khmer_base, split_kcc};
 
 use crate::corpus::Example;
 
@@ -24,8 +24,11 @@ pub struct HmmCounts {
     pub emit: HashMap<String, [u64; NUM_STATES]>,
 }
 
+// A run-continuing word starts with a Khmer *letter base* — Khmer digits
+// and punctuation (។, ១២៣) break runs, matching what `segment` hands to
+// the fallback models since the digit/punctuation isolation fix.
 fn is_khmer_word(word: &str) -> bool {
-    word.chars().next().is_some_and(is_khmer)
+    word.chars().next().is_some_and(is_khmer_base)
 }
 
 /// BMES tags for one gold word's clusters: a single cluster is tagged

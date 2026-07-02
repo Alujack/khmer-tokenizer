@@ -17,10 +17,20 @@ pub(crate) const COENG: char = '\u{17D2}';
 /// precedes a `COENG`+consonant subscript pair (see `crate::normalize`).
 pub(crate) const ROBAT: char = '\u{17CC}';
 
-/// A Khmer *base*: consonants (`U+1780..=U+17A2`) and independent vowels
-/// (`U+17A3..=U+17B3`). A cluster always begins with one of these.
-pub(crate) fn is_khmer_base(c: char) -> bool {
+/// A Khmer *letter base*: consonants (`U+1780..=U+17A2`) and independent
+/// vowels (`U+17A3..=U+17B3`). A word cluster always begins with one of
+/// these — Khmer digits, punctuation, and the currency sign are in the
+/// Khmer block (so [`is_khmer`] is true for them) but are **not** bases and
+/// never start a word cluster.
+pub fn is_khmer_base(c: char) -> bool {
     matches!(c as u32, 0x1780..=0x17B3)
+}
+
+/// A Khmer digit (`០..=៩`, `U+17E0..=U+17E9`) or divination-lore numeral
+/// (`U+17F0..=U+17F9`). Runs of these group into one token, like runs of
+/// ASCII digits.
+pub(crate) fn is_khmer_digit(c: char) -> bool {
+    matches!(c as u32, 0x17E0..=0x17E9 | 0x17F0..=0x17F9)
 }
 
 /// Dependent vowels, signs and diacritics that attach to a base, plus the
@@ -64,9 +74,19 @@ pub fn split_kcc(text: &str) -> Vec<String> {
             i += 1;
             while i < n {
                 let d = chars[i];
-                if d == COENG && i + 1 < n {
-                    // COENG plus the consonant it subscripts.
-                    i += 2;
+                if d == COENG {
+                    // COENG subscripts the *next base* only. Real-world text
+                    // contains dangling COENGs (truncation, typos) followed
+                    // by a space, ZWSP, Latin, or nothing — blindly
+                    // consuming whatever follows would swallow a word
+                    // boundary into the middle of a cluster. A dangling
+                    // COENG stays attached to its base; the next char is
+                    // left for the outer loop.
+                    if i + 1 < n && is_khmer_base(chars[i + 1]) {
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
                 } else if is_khmer_combining(d) {
                     i += 1;
                 } else {
@@ -104,5 +124,24 @@ mod tests {
         assert!(is_khmer('ខ'));
         assert!(!is_khmer('a'));
         assert!(!is_khmer('1'));
+        // Digits, punctuation, and currency are in the block...
+        assert!(is_khmer('១') && is_khmer('។') && is_khmer('៛'));
+        // ...but are not letter bases.
+        assert!(!is_khmer_base('១') && !is_khmer_base('។') && !is_khmer_base('៛'));
+        assert!(is_khmer_base('ខ'));
+    }
+
+    #[test]
+    fn dangling_coeng_never_swallows_what_follows() {
+        // COENG followed by a space, ZWSP, or Latin letter is malformed
+        // (truncated/typo'd) text — the COENG stays with its base and the
+        // next char is NOT absorbed into the cluster.
+        assert_eq!(split_kcc("ក្ ក"), vec!["ក\u{17D2}", " ", "ក"]);
+        assert_eq!(split_kcc("ក្\u{200B}ខ"), vec!["ក\u{17D2}", "\u{200B}", "ខ"]);
+        assert_eq!(split_kcc("ក្a"), vec!["ក\u{17D2}", "a"]);
+        // At end of text the dangling COENG also stays with its base.
+        assert_eq!(split_kcc("ក្"), vec!["ក\u{17D2}"]);
+        // And a well-formed subscript pair is untouched.
+        assert_eq!(split_kcc("ក្ក"), vec!["ក\u{17D2}ក"]);
     }
 }

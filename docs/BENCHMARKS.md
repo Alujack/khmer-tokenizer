@@ -343,3 +343,64 @@ found (and fixed) two real bugs, now regression-tested:
 Also probed and confirmed fine: zero-epoch (all-zero-weight) models
 degrade to one-token-per-cluster; a 5,000-cluster single run decodes in
 ~26 ms.
+
+## Real-world robustness hardening (dirty-text pass)
+
+An adversarial pass over the *whole* library — not just the tagger — fed
+it the kind of text real Khmer web pages, databases, and files actually
+contain: truncated words, invisible characters, Khmer digits and
+punctuation, byte-order marks. It found **three correctness bugs** in the
+cluster/segmentation core, all now fixed and regression-tested, plus a
+2,000-case round-trip fuzzer and a 3,000-case normalization fuzzer that
+now pass clean.
+
+The bugs:
+
+1. **Dangling COENG swallowed the following character** (`core/src/kcc.rs`).
+   `U+17D2` COENG subscripts the *next base consonant* — but the splitter
+   blindly consumed whatever followed it. On truncated or mistyped text
+   (`"ក្ ខ"`, `"ក្\u{200B}ខ"`, `"ក្abc"`) it ate the space, the ZWSP
+   word-boundary marker, or a Latin letter *into* the Khmer cluster. The
+   ZWSP case is the worst: it silently destroyed an authoritative word
+   boundary. Fixed to attach a dangling COENG to its base and leave the
+   next character for the outer pass.
+2. **Khmer digit runs shattered into one token per digit**
+   (`core/src/trie.rs`). `"១២៣"` (a date or price) came out as
+   `["១","២","៣"]` because digits were fed to the dictionary strategy,
+   which has no digit entries. Now runs of Khmer digits group into a
+   single token — exactly how ASCII digit runs already behaved.
+3. **BOM / `U+FEFF` surfaced as an invisible garbage token**
+   (`core/src/trie.rs`). The byte-order mark that begins countless
+   real-world files became a standalone zero-width token (or glued itself
+   onto the next one). Now treated as a separator, like ZWSP.
+
+Khmer punctuation (`។ ៕ ៛` …) is now also isolated as its own token and
+kept out of both the dictionary strategy and the OOV-fallback buffer,
+where a fallback model could otherwise glue it into a fabricated "word".
+
+**Measured effect on khPOS OPEN-TEST** (1,000 sentences) — every
+configuration improved, because khPOS gold also isolates punctuation and
+groups digits, so correct handling aligns better with the reference. The
+standout is out-of-vocabulary recall:
+
+| Configuration | F1 before → after | R-oov before → after |
+|---|---|---|
+| ForwardMaxMatch          | 0.7216 → **0.7390** | 0.3505 → **0.4198** |
+| BiMaxMatch               | 0.7255 → **0.7436** | 0.3493 → **0.4198** |
+| UnigramDp                | 0.7661 → **0.7836** | 0.3499 → **0.4198** |
+| UnigramDp + HMM          | 0.7805 → **0.7870** | 0.4014 → **0.4310** |
+| UnigramDp + Tagger       | 0.7834 → **0.7870** | 0.4144 → **0.4298** |
+| Tagger full              | 0.9300 → **0.9333** | 0.8976 → **0.9053** |
+
+R-oov jumps ~0.07 absolute across the dictionary strategies: Khmer digit
+runs and punctuation were previously counted as missed OOV spans, and
+fixing their handling recovers them. This supersedes the "reproduces
+byte-for-byte" note on the tagger rows above — that was true of the tagger
+addition, which didn't touch these paths; *this* change deliberately does,
+with the positive deltas shown. The earlier phase tables remain as
+historical snapshots of what each phase measured at the time.
+
+> The kh10000b cross-corpus rows above were measured against the
+> pre-hardening code; they will shift (in the same direction) when re-run,
+> since that corpus is dense with digits and punctuation. Not re-measured
+> in this pass.

@@ -21,7 +21,7 @@
 
 use std::collections::HashMap;
 
-use crate::kcc::{is_khmer, split_kcc};
+use crate::kcc::{is_khmer_base, split_kcc};
 
 const NUM_STATES: usize = 4;
 const BEGIN: usize = 0;
@@ -85,16 +85,18 @@ fn tag_word(clusters: &[String]) -> Vec<usize> {
 }
 
 /// Split gold-segmented sentences into maximal runs of consecutive Khmer
-/// words, tagging every word's clusters BMES. A run breaks at any non-Khmer
-/// word — the same boundary `KhmerTokenizer::segment` uses when handing a
-/// contiguous Khmer run to the tagger.
+/// *letter* words, tagging every word's clusters BMES. A run breaks at any
+/// word that doesn't start with a Khmer letter base — non-Khmer words, but
+/// also Khmer digits and punctuation (។, ១២៣) — the same boundary
+/// `KhmerTokenizer::segment` uses when handing a contiguous letter run to
+/// the tagger.
 fn extract_runs(sentences: &[Vec<String>]) -> Vec<(Vec<String>, Vec<usize>)> {
     let mut runs = Vec::new();
     for sentence in sentences {
         let mut clusters: Vec<String> = Vec::new();
         let mut tags: Vec<usize> = Vec::new();
         for word in sentence {
-            if !word.chars().next().is_some_and(is_khmer) {
+            if !word.chars().next().is_some_and(is_khmer_base) {
                 if !clusters.is_empty() {
                     runs.push((std::mem::take(&mut clusters), std::mem::take(&mut tags)));
                 }

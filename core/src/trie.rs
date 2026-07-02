@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::hmm::HmmModel;
-use crate::kcc::{is_khmer, split_kcc};
+use crate::kcc::{is_khmer, is_khmer_base, is_khmer_digit, split_kcc};
 use crate::normalize::normalize;
 use crate::strategy::Strategy;
 use crate::tagger::TaggerModel;
@@ -262,9 +262,33 @@ impl KhmerTokenizer {
                 continue;
             }
 
-            // Khmer run: hand the whole contiguous run to the strategy.
+            // Khmer digit run (dates, prices: "១២៣"): one token, exactly
+            // like a run of ASCII digits — never handed to the dictionary
+            // strategy or an OOV-fallback model, which would shatter it per
+            // digit (or worse, let a model glue digits into fake "words").
+            if is_khmer_digit(first) {
+                let start = i;
+                while i < n && clusters[i].chars().next().is_some_and(is_khmer_digit) {
+                    i += 1;
+                }
+                tokens.push(clusters[start..i].concat());
+                continue;
+            }
+
+            // Khmer non-letter cluster: punctuation (។ ៕ ៖ ៗ …), the
+            // currency sign ៛, or a stray combining mark / dangling COENG.
+            // Always its own token — real Khmer tools treat ។ as a
+            // standalone symbol, and keeping these out of the strategy also
+            // keeps them out of the OOV-fallback buffer.
+            if !is_khmer_base(first) {
+                tokens.push(cl.clone());
+                i += 1;
+                continue;
+            }
+
+            // Khmer letter run: hand the whole contiguous run to the strategy.
             let start = i;
-            while i < n && is_khmer(clusters[i].chars().next().unwrap()) {
+            while i < n && clusters[i].chars().next().is_some_and(is_khmer_base) {
                 i += 1;
             }
             let run = &clusters[start..i];
@@ -301,13 +325,15 @@ impl KhmerTokenizer {
 }
 
 /// True for a cluster that separates tokens without producing one: any
-/// whitespace, or `U+200B` ZERO WIDTH SPACE — the character the Unicode
-/// Standard recommends as the Khmer word-boundary marker. ZWSP is not
-/// Unicode `White_Space` (so `trim()` alone doesn't catch it), and
-/// [`split_kcc`](crate::split_kcc) always emits it as its own single-char
-/// cluster, so an exact comparison suffices.
+/// whitespace, `U+200B` ZERO WIDTH SPACE — the character the Unicode
+/// Standard recommends as the Khmer word-boundary marker — or `U+FEFF`
+/// (BOM / deprecated ZERO WIDTH NO-BREAK SPACE, which starts countless
+/// real-world files and would otherwise surface as an invisible garbage
+/// token). Neither is Unicode `White_Space` (so `trim()` alone doesn't
+/// catch them), and [`split_kcc`](crate::split_kcc) always emits each as
+/// its own single-char cluster, so an exact comparison suffices.
 fn is_separator(cl: &str) -> bool {
-    cl.trim().is_empty() || cl == "\u{200B}"
+    cl.trim().is_empty() || cl == "\u{200B}" || cl == "\u{FEFF}"
 }
 
 /// Greedy longest-match walk over `clusters`, consuming the longest run that
@@ -695,6 +721,63 @@ mod tests {
     fn zwsp_splits_non_khmer_runs_too() {
         let tk = KhmerTokenizer::empty();
         assert_eq!(tk.segment("Hello\u{200B}World"), vec!["Hello", "World"]);
+    }
+
+    #[test]
+    fn zwsp_after_a_dangling_coeng_is_still_a_boundary() {
+        // Regression: split_kcc used to let a dangling COENG swallow the
+        // following ZWSP into the cluster, leaking the "authoritative
+        // boundary" character into token output.
+        let tk = KhmerTokenizer::from_words(["កខ"]);
+        let tokens = tk.segment("ក្\u{200B}ខ");
+        assert_eq!(tokens, vec!["ក\u{17D2}", "ខ"]);
+        assert!(tokens.iter().all(|t| !t.contains('\u{200B}')));
+    }
+
+    #[test]
+    fn whitespace_after_a_dangling_coeng_stays_out_of_tokens() {
+        let tk = KhmerTokenizer::empty();
+        let tokens = tk.segment("ក្ ខ");
+        assert_eq!(tokens, vec!["ក\u{17D2}", "ខ"]);
+        assert!(tokens.iter().all(|t| !t.contains(' ')));
+    }
+
+    #[test]
+    fn khmer_digit_runs_group_into_one_token() {
+        // Dates and prices: "១២" must not shatter into one token per digit.
+        let tk = KhmerTokenizer::with_default_dict();
+        let tokens = tk.segment("ថ្ងៃទី១២");
+        assert!(tokens.contains(&"១២".to_string()), "got {tokens:?}");
+        // Divination numerals group too; Arabic and Khmer digits stay
+        // separate tokens (different scripts).
+        assert_eq!(tk.segment("12៥៦"), vec!["12", "៥៦"]);
+    }
+
+    #[test]
+    fn khmer_punctuation_is_its_own_token_and_immune_to_fallback_models() {
+        use crate::tagger::TaggerModel;
+
+        // ។ (khan) ends a sentence; it must be a standalone token...
+        let tk = KhmerTokenizer::from_words(["កម្ពុជា"]);
+        assert_eq!(tk.segment("កម្ពុជា។"), vec!["កម្ពុជា", "។"]);
+
+        // ...and must never sit in the OOV buffer where a fallback model
+        // could glue it into a guessed "word". Train a tagger that greedily
+        // merges everything it sees into one word, then check ។ survives.
+        let s = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        let merge_all = TaggerModel::train(&[s(&["ខគ"]), s(&["ខគ"]), s(&["គខ"])], 5);
+        let tk = KhmerTokenizer::from_words(["កម្ពុជា"]).with_tagger(merge_all);
+        let tokens = tk.segment("កម្ពុជា។ខគ");
+        assert!(tokens.contains(&"។".to_string()), "got {tokens:?}");
+    }
+
+    #[test]
+    fn bom_is_consumed_as_a_separator_not_emitted() {
+        // U+FEFF starts countless real-world files; it must neither become
+        // an invisible token nor glue itself into an adjacent one.
+        let tk = KhmerTokenizer::from_words(["ខ្មែរ"]);
+        assert_eq!(tk.segment("\u{FEFF}ខ្មែរ"), vec!["ខ្មែរ"]);
+        assert_eq!(tk.segment("\u{FEFF}hello"), vec!["hello"]);
     }
 
     #[test]

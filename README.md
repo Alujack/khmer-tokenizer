@@ -83,12 +83,19 @@ Segmentation runs in three passes:
      yourself with `TaggerModel::train` on a segmented corpus; **none ships
      with this crate**. Falls back to `ForwardMaxMatch` if none is set.
 
-   Either way, runs of non-Khmer text (Latin, digits, punctuation) become
-   their own tokens, and whitespace separates tokens without producing one.
-   So does `U+200B` ZERO WIDTH SPACE — the character the Unicode Standard
-   recommends for marking Khmer word boundaries, ubiquitous as an invisible
-   hint in real Khmer web text. Each ZWSP is trusted as an authoritative
-   boundary: consumed, never emitted as a token, never merged across.
+   Either way, only runs of Khmer *letters* go to the strategy. Runs of
+   non-Khmer text (Latin, ASCII digits, punctuation) become their own
+   tokens, and so do runs of **Khmer digits** (`១២៣` — dates, prices) and
+   individual **Khmer punctuation / symbols** (`។ ៕ ៛` …), which are never
+   fed to the dictionary or an OOV model that might shatter or glue them.
+   Whitespace separates tokens without producing one. So do `U+200B` ZERO
+   WIDTH SPACE — the character the Unicode Standard recommends for marking
+   Khmer word boundaries, ubiquitous as an invisible hint in real Khmer web
+   text — and `U+FEFF` (the byte-order mark that begins countless files);
+   each is trusted as a boundary: consumed, never emitted as a token, never
+   merged across. A dangling `COENG` (`U+17D2`) in truncated or mistyped
+   text stays attached to its base and never swallows the character after
+   it, so a following space or ZWSP still marks the boundary it should.
 3. **OOV fallback (optional)** — every dictionary strategy above still falls
    back to one token per cluster when a run matches *nothing* in the
    dictionary at all. Attaching a model replaces just those unmatched runs

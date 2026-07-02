@@ -1,9 +1,13 @@
-# khmer-tokenizer
+# kh-tokenizer
 
 Fast, dependency-free **Khmer word segmentation** for JavaScript — the
 [khmer-tokenizer-core](https://crates.io/crates/khmer-tokenizer-core) Rust
 engine compiled to WebAssembly. Runs in Node and browsers; ships its own
 TypeScript definitions.
+
+(Named `kh-tokenizer` on npm because `khmer-tokenizer` — the project's
+PyPI/crates.io name — is blocked by npm's similar-name rule. Same engine,
+same API.)
 
 Written Khmer has no spaces between words, so before you can search, index,
 or feed Khmer text to a model, you have to split it into words. General-purpose
@@ -11,7 +15,7 @@ tokenizers either ignore Khmer or shatter it into meaningless character
 fragments; this package segments it correctly.
 
 ```js
-import { KhmerTokenizer, splitKcc, normalize, isKhmer } from "khmer-tokenizer";
+import { KhmerTokenizer, splitKcc, normalize, isKhmer } from "kh-tokenizer";
 
 const tk = new KhmerTokenizer(); // embedded 59k-word dictionary, forward max-match
 tk.segment("សួស្តីអ្នកទាំងអស់គ្នា");

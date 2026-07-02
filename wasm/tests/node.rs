@@ -2,7 +2,7 @@
 //! with `wasm-pack test --node wasm`. Mirrors py/tests/test_tokenizer.py.
 
 use js_sys::{Array, Object, Reflect};
-use khmer_tokenizer::{is_khmer, normalize, split_kcc, KhmerTokenizer};
+use kh_tokenizer::{is_khmer, normalize, split_kcc, KhmerTokenizer};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::wasm_bindgen_test;
 

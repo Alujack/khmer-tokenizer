@@ -2,11 +2,15 @@
 # [workspace] table at the bottom), for the same reason as py/: the
 # core/cli/eval/xtask workspace stays zero-third-party-dependency, while
 # this crate needs wasm-bindgen. Built with `wasm-pack build wasm` and
-# published to npm as `khmer-tokenizer` (the crate name becomes the npm
+# published to npm as `kh-tokenizer` (the crate name becomes the npm
 # package name), never to crates.io (`publish = false`).
+#
+# Why not `khmer-tokenizer` like PyPI? npm's typosquat rule rejects it as
+# "too similar to existing package khmertokenizer" (someone else's 2023
+# package), so the npm name is kh-tokenizer instead.
 
 [package]
-name = "khmer-tokenizer"
+name = "kh-tokenizer"
 version = "0.1.0"
 edition = "2021"
 description = "Fast, dependency-free Khmer word segmentation (Rust core compiled to WebAssembly)"

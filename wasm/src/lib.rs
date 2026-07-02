@@ -5,7 +5,7 @@
 //! options object, plus the three free functions.
 //!
 //! ```js
-//! import { KhmerTokenizer, splitKcc, normalize, isKhmer } from "khmer-tokenizer";
+//! import { KhmerTokenizer, splitKcc, normalize, isKhmer } from "kh-tokenizer";
 //!
 //! const tk = new KhmerTokenizer(); // embedded default dictionary, forward max-match
 //! tk.segment("សួស្តីអ្នកទាំងអស់គ្នា");

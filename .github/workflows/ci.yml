@@ -54,3 +54,23 @@ jobs:
         run: |
           . .venv/bin/activate
           cd py && pytest tests/ -v
+
+  # Same detached-crate pattern as py/: the wasm/ crate needs wasm-bindgen,
+  # so it lives outside the zero-dependency workspace and gets its own job.
+  wasm-bindings:
+    name: WASM bindings (wasm/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Clippy (wasm crate)
+        run: cargo clippy --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown --all-targets -- -D warnings
+      - name: Test in a real wasm engine (Node)
+        run: wasm-pack test --node wasm
+      - name: Build the npm package
+        run: wasm-pack build wasm --release --target nodejs --out-dir pkg-node

@@ -1,7 +1,11 @@
 # Rust build artifacts
 /target
 /py/target
+/wasm/target
 **/*.rs.bk
+
+# wasm-pack output (wasm/ bindings) — generated, published to npm, never committed
+/wasm/pkg*
 
 # Python build/test artifacts (py/ bindings)
 __pycache__/

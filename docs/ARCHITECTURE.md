@@ -37,7 +37,7 @@ model training later.
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Regression guard | `eval/tests/regression.rs` + CI | fail the build if accuracy silently rots | ✅ built (Phase 6 — see below) |
 | Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
-| Bindings         | `py/` (PyO3), `wasm/`  | run from Python and JS/browser               | ✅ Python on PyPI (`pip install khmer-tokenizer`; release workflow builds all-platform wheels); WASM 🔭 future |
+| Bindings         | `py/` (PyO3), `wasm/`  | run from Python and JS/browser               | ✅ Python on PyPI (`pip install khmer-tokenizer`; release workflow builds all-platform wheels); ✅ WASM built (npm-ready, own CI job) |
 
 ## Today's default pipeline (`Strategy::ForwardMaxMatch`)
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Automated packaging script that builds and bundles the WebAssembly crate
-// for both NodeJS (CommonJS) and browser bundlers (ES Modules) like React/Vite.
+// for both browsers and Node.js by inlining the WASM binary as a Base64 string.
+// This guarantees zero-configuration out-of-the-box compatibility in React/Vite/Webpack
+// without requiring any bundler plugins.
 //
 // Usage: node wasm/prepare-npm-pkg.js
 
@@ -10,53 +12,85 @@ const { execSync } = require("child_process");
 
 const wasmDir = __dirname;
 const pkgDir = path.join(wasmDir, "pkg");
+const webPkgDir = path.join(wasmDir, "pkg-web");
 
-console.log("Building hybrid npm package...");
+console.log("Building zero-config WebAssembly npm package (inlining WASM as Base64)...");
 
-// 1. Clean previous pkg build
+// 1. Clean previous pkg build directories
 if (fs.existsSync(pkgDir)) {
   fs.rmSync(pkgDir, { recursive: true, force: true });
 }
+if (fs.existsSync(webPkgDir)) {
+  fs.rmSync(webPkgDir, { recursive: true, force: true });
+}
+fs.mkdirSync(pkgDir, { recursive: true });
 
-// 2. Build for nodejs
-console.log("Building Node.js target...");
-execSync("wasm-pack build wasm --release --target nodejs --out-dir pkg/node", {
-  cwd: path.join(wasmDir, ".."),
+// 2. Build for web target using wasm-pack
+console.log("Compiling WebAssembly via wasm-pack (target web)...");
+execSync("wasm-pack build --release --target web --out-dir pkg-web", {
+  cwd: wasmDir,
   stdio: "inherit",
 });
 
-// 3. Build for bundler (React / Vite / Webpack / ES Modules)
-console.log("Building bundler target...");
-execSync("wasm-pack build wasm --release --target bundler --out-dir pkg/bundler", {
-  cwd: path.join(wasmDir, ".."),
-  stdio: "inherit",
-});
-
-// 4. Read base package.json from bundler build
-const bundlerPkgFile = path.join(pkgDir, "bundler", "package.json");
-if (!fs.existsSync(bundlerPkgFile)) {
-  console.error("Error: bundler package.json not found!");
+// 3. Read the generated .wasm binary file and encode to base64
+console.log("Inlining WASM binary as base64...");
+const wasmFilePath = path.join(webPkgDir, "kh_tokenizer_bg.wasm");
+if (!fs.existsSync(wasmFilePath)) {
+  console.error("Error: WASM file not found!");
   process.exit(1);
 }
-const pkg = JSON.parse(fs.readFileSync(bundlerPkgFile, "utf8"));
+const wasmBuffer = fs.readFileSync(wasmFilePath);
+const wasmBase64 = wasmBuffer.toString("base64");
 
-// 5. Update metadata for hybrid exports
-pkg.files = ["node", "bundler", "LICENSE-MIT", "LICENSE-APACHE", "README.md"];
-pkg.main = "node/kh_tokenizer.js";
-pkg.module = "bundler/kh_tokenizer.js";
-pkg.browser = "bundler/kh_tokenizer.js";
-pkg.types = "bundler/kh_tokenizer.d.ts";
+// 4. Read the generated JS loader and append the self-initialization script
+const jsFilePath = path.join(webPkgDir, "kh_tokenizer.js");
+let jsContent = fs.readFileSync(jsFilePath, "utf8");
+
+const initScript = `
+// --- Auto-initialization with inlined Base64 WASM ---
+const wasmBase64 = "${wasmBase64}";
+let wasmBytes;
+if (typeof atob === 'function') {
+  const binaryString = atob(wasmBase64);
+  const len = binaryString.length;
+  wasmBytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    wasmBytes[i] = binaryString.charCodeAt(i);
+  }
+} else if (typeof Buffer === 'function') {
+  wasmBytes = Buffer.from(wasmBase64, 'base64');
+}
+initSync(wasmBytes);
+`;
+
+// Append the self-initialization script to the JS content
+jsContent += initScript;
+
+// 5. Write the modified JS file to the final package directory
+const finalJsPath = path.join(pkgDir, "kh_tokenizer.js");
+fs.writeFileSync(finalJsPath, jsContent, "utf8");
+
+// 6. Copy types declaration file
+fs.copyFileSync(path.join(webPkgDir, "kh_tokenizer.d.ts"), path.join(pkgDir, "kh_tokenizer.d.ts"));
+
+// 7. Read and modify package.json
+const rawPkgJson = fs.readFileSync(path.join(webPkgDir, "package.json"), "utf8");
+const pkg = JSON.parse(rawPkgJson);
+
+pkg.files = ["kh_tokenizer.js", "kh_tokenizer.d.ts", "LICENSE-MIT", "LICENSE-APACHE", "README.md"];
+pkg.main = "kh_tokenizer.js";
+pkg.module = "kh_tokenizer.js";
+pkg.types = "kh_tokenizer.d.ts";
 pkg.exports = {
   ".": {
-    "types": "./bundler/kh_tokenizer.d.ts",
-    "import": "./bundler/kh_tokenizer.js",
-    "require": "./node/kh_tokenizer.js",
-    "default": "./bundler/kh_tokenizer.js"
+    "types": "./kh_tokenizer.d.ts",
+    "import": "./kh_tokenizer.js",
+    "require": "./kh_tokenizer.js",
+    "default": "./kh_tokenizer.js"
   }
 };
 pkg.sideEffects = [
-  "./bundler/kh_tokenizer.js",
-  "./node/kh_tokenizer.js"
+  "./kh_tokenizer.js"
 ];
 
 pkg.keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cambodia", "wasm", "khmerTokenizer", "khmer-tokenizer", "khmer_tokenizer"];
@@ -66,32 +100,14 @@ pkg.repository = {
   url: "git+https://github.com/Alujack/khmer-tokenizer.git",
 };
 
-// 6. Write final package.json to pkg root
 fs.writeFileSync(path.join(pkgDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
 
-// 7. Copy licenses and readme
+// 8. Copy licenses and readme
 fs.copyFileSync(path.join(wasmDir, "LICENSE-MIT"), path.join(pkgDir, "LICENSE-MIT"));
 fs.copyFileSync(path.join(wasmDir, "LICENSE-APACHE"), path.join(pkgDir, "LICENSE-APACHE"));
 fs.copyFileSync(path.join(wasmDir, "README.md"), path.join(pkgDir, "README.md"));
 
-// 8. Clean up redundant package.json and license files in subdirectories
-const cleanList = [
-  path.join(pkgDir, "node", "package.json"),
-  path.join(pkgDir, "node", "LICENSE-MIT"),
-  path.join(pkgDir, "node", "LICENSE-APACHE"),
-  path.join(pkgDir, "node", "README.md"),
-  path.join(pkgDir, "node", ".gitignore"),
-  path.join(pkgDir, "bundler", "package.json"),
-  path.join(pkgDir, "bundler", "LICENSE-MIT"),
-  path.join(pkgDir, "bundler", "LICENSE-APACHE"),
-  path.join(pkgDir, "bundler", "README.md"),
-  path.join(pkgDir, "bundler", ".gitignore"),
-];
+// 9. Cleanup temporary pkg-web dir
+fs.rmSync(webPkgDir, { recursive: true, force: true });
 
-for (const file of cleanList) {
-  if (fs.existsSync(file)) {
-    fs.unlinkSync(file);
-  }
-}
-
-console.log("Hybrid package successfully created in wasm/pkg/");
+console.log("Unified zero-config hybrid package successfully created in wasm/pkg/");

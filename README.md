@@ -70,11 +70,18 @@ Segmentation runs in three passes:
      measurably more accurate than the default.
    - `UnigramDp` — builds a DAG of every dictionary match (not just the
      longest) and dynamic-programs the highest-probability path using word
-     frequencies you supply via `with_frequencies(...)`. The most accurate of
-     the three by a clear margin — see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md) —
+     frequencies you supply via `with_frequencies(...)`. The most accurate
+     dictionary strategy by a clear margin — see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md) —
      but needs a frequency table; **none ships with this crate** (see
      "Dictionary" below for why). Falls back to `ForwardMaxMatch` if none is
      set.
+   - `Tagger` — skips the dictionary entirely: every Khmer run is segmented
+     by an averaged-perceptron BMES tagger (`TaggerModel`, the CRF-class
+     tier) attached via `with_tagger(...)`. The most accurate mode overall
+     — **F1 0.93 vs 0.78 for the best dictionary configuration** on khPOS
+     (see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)) — but needs a model you train
+     yourself with `TaggerModel::train` on a segmented corpus; **none ships
+     with this crate**. Falls back to `ForwardMaxMatch` if none is set.
 
    Either way, runs of non-Khmer text (Latin, digits, punctuation) become
    their own tokens, and whitespace separates tokens without producing one.
@@ -82,14 +89,17 @@ Segmentation runs in three passes:
    recommends for marking Khmer word boundaries, ubiquitous as an invisible
    hint in real Khmer web text. Each ZWSP is trusted as an authoritative
    boundary: consumed, never emitted as a token, never merged across.
-3. **OOV fallback (optional)** — every strategy above still falls back to one
-   token per cluster when a run matches *nothing* in the dictionary at all.
-   Attaching an [`HmmModel`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/hmm.rs) via `with_hmm(...)` replaces
-   just those unmatched runs with a Viterbi-decoded BMES guess instead,
-   leaving every dictionary hit (including real single-cluster words)
-   untouched — lifts out-of-vocabulary recall by ~0.05 absolute with no
-   measured cost to in-vocabulary accuracy (see
-   [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)). Needs a model you train yourself;
+3. **OOV fallback (optional)** — every dictionary strategy above still falls
+   back to one token per cluster when a run matches *nothing* in the
+   dictionary at all. Attaching a model replaces just those unmatched runs
+   with a Viterbi-decoded BMES guess instead, leaving every dictionary hit
+   (including real single-cluster words) untouched. Two model types fit the
+   same seam: an [`HmmModel`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/hmm.rs) via `with_hmm(...)` (cluster-identity
+   emissions; lifts OOV recall ~0.05 absolute), or a
+   [`TaggerModel`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/tagger.rs) via `with_tagger(...)` (context-feature
+   perceptron; a strict upgrade — lifts OOV recall further with no
+   in-vocabulary cost, and is preferred when both are attached; see
+   [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)). Both need a model you train yourself;
    none ships with this crate (same reason as `UnigramDp`'s frequencies).
 
 The engine is `std`-only and deterministic. No model, no training step, no
@@ -146,6 +156,18 @@ let tk = KhmerTokenizer::with_default_dict()
 // corpus with HmmModel::from_counts(start_counts, trans_counts, emit_counts).
 use khmer_tokenizer_core::HmmModel;
 let tk = KhmerTokenizer::with_default_dict().with_hmm(my_hmm_model);
+
+// Or the stronger CRF-class option: train an averaged-perceptron BMES
+// tagger from gold-segmented sentences. As a fallback it upgrades the HMM
+// at the same seam; with Strategy::Tagger it segments everything itself
+// (F1 0.93 vs 0.78 on khPOS — see BENCHMARKS.md). Persist with
+// to_text()/from_text().
+use khmer_tokenizer_core::TaggerModel;
+let model = TaggerModel::train(&gold_sentences, 5);
+let tk = KhmerTokenizer::with_default_dict().with_tagger(model.clone()); // fallback
+let tk = KhmerTokenizer::empty()
+    .with_strategy(Strategy::Tagger)
+    .with_tagger(model); // full tagger segmentation
 
 // Orthographic normalization runs by default; opt out if you need exact
 // byte-for-byte parity with pre-Phase-5 behavior.
@@ -285,15 +307,14 @@ below a floor. [CI](https://github.com/Alujack/khmer-tokenizer/blob/master/.gith
 
 Designed so these slot in without restructuring the workspace:
 
-- **A statistical BMES tagger tier (CRF-class)** — see
-  [docs/RESEARCH-3.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/RESEARCH-3.md) §4.
 - **Benchmarks** — a Criterion suite to track throughput.
 - **A bundleable frequency table** for `UnigramDp` — no commercially-clean,
   bundleable corpus-frequency source has been found yet (see
   [docs/ROADMAP.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/ROADMAP.md) Phase 3); until then, callers supply
   their own via `with_frequencies(...)`.
-- **CLI support for `UnigramDp` and `with_hmm`** — the CLI has no mechanism
-  yet to load an external frequency table or HMM model file, so
+- **CLI support for `UnigramDp`, `with_hmm`, and `Strategy::Tagger`** — the
+  CLI has no mechanism yet to load an external frequency table or model
+  file (the tagger's `to_text` format is designed for exactly this), so
   `--strategy` only exposes `fmm`/`bimm`.
 
 ## License

@@ -248,13 +248,24 @@ implemented immediately (the NFC/CCC normalizer rule and ZWSP boundary
 handling — see the survey's §2 and `BENCHMARKS.md`); the rest shape what
 comes next:
 
-- [ ] **Statistical BMES tagger tier (CRF or averaged perceptron).** The
-      popular Khmer tools (khmercut, khmer-nltk) are CRF-based — the tier
-      between this project's dictionary-DP and neural SOTA. Phase 4's BMES
-      training infrastructure (`eval/src/hmm.rs`) is the substrate; a
-      feature-richer tagger trained the same local-only way would close
-      part of the accuracy gap without abandoning the zero-dependency
-      posture. Same NC-license constraint: no trained model ships.
+- [x] **Statistical BMES tagger tier (CRF or averaged perceptron)** —
+      built as `core/src/tagger.rs` (2026-07-02): an averaged structured
+      perceptron (Collins 2002) over KCC clusters, Viterbi-decoded,
+      deterministic in training (xorshift-shuffled epochs, averaged
+      weights) and inference, dependency-free. Context features: cluster
+      identity, ±1/±2 neighbors, adjacent bigrams, cluster length.
+      Integrates twice: `with_tagger(...)` as a drop-in upgrade over the
+      Phase 4 HMM at the same OOV-fallback seam (tagger preferred when
+      both attached), and `Strategy::Tagger` for full tagger segmentation
+      that ignores the dictionary. Persistable with
+      `TaggerModel::to_text`/`from_text` (plain-text v1 format). Measured
+      on khPOS OPEN-TEST (train split, 5 epochs, local-only): fallback
+      lifts R-oov 0.4020→0.4150 and best-hybrid F1 0.7805→0.7834; **full
+      tagger mode reaches F1 0.9300** (vs 0.7805 prior best), word
+      accuracy 0.785 — the khmercut-class CRF tier RESEARCH-3 §4
+      projected. All historical rows reproduce byte-for-byte. Same
+      NC-license constraint honored: no trained model ships; training
+      lives in `eval/src/tagger.rs` + `cargo xtask eval`.
 - [x] **Python (PyO3) bindings** — built as `py/` (2026-07-02): a
       maturin/PyO3 crate deliberately *outside* the Cargo workspace (so
       core/cli/eval/xtask keep their zero-third-party-dependency posture

@@ -15,7 +15,7 @@ use std::path::Path;
 
 use khmer_tokenizer_core::{HmmModel, KhmerTokenizer, Strategy};
 use khmer_tokenizer_eval::corpus::{self, Split};
-use khmer_tokenizer_eval::{count_frequencies, evaluate, kh10000b, train_hmm};
+use khmer_tokenizer_eval::{count_frequencies, evaluate, kh10000b, train_hmm, train_tagger};
 
 fn main() {
     match std::env::args().nth(1).as_deref() {
@@ -98,6 +98,35 @@ fn run_eval() {
         .without_normalization();
     let metrics = evaluate(&examples, &tokenizer);
     report::print_table("UnigramDp + HMM (khPOS train, local-only)", &metrics);
+
+    // Post-roadmap: the CRF-class averaged-perceptron tagger tier (see
+    // docs/RESEARCH-3.md §4). Same licensing posture again: trained from
+    // khPOS's train split (5 epochs, deterministic) for local evaluation
+    // only — never bundled, committed, or shipped. Rows stay
+    // without_normalization() for apples-to-apples comparison with the
+    // historical rows above.
+    let tagger_model = train_tagger(&train_examples, 5);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_tagger(tagger_model.clone())
+        .without_normalization();
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("ForwardMaxMatch + Tagger (khPOS train, local-only)", &metrics);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_strategy(Strategy::UnigramDp)
+        .with_frequencies(freqs.clone())
+        .with_tagger(tagger_model.clone())
+        .without_normalization();
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("UnigramDp + Tagger (khPOS train, local-only)", &metrics);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_strategy(Strategy::Tagger)
+        .with_tagger(tagger_model)
+        .without_normalization();
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("Tagger full (khPOS train, local-only)", &metrics);
 
     // Phase 5: orthographic normalization, on by default as of this phase.
     // Isolate its contribution on top of the weakest and strongest

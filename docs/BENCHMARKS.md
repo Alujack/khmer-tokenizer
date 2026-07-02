@@ -253,3 +253,52 @@ Measured effect, per the no-silent-changes rule:
   measured-zero, defense-in-depth status as Phase 5's original rule, now
   with the failure mode documented as *provable* (TN61) rather than
   hypothetical.
+
+## Post-roadmap: the CRF-class tagger tier (averaged structured perceptron)
+
+`core/src/tagger.rs` adds the tier RESEARCH-3 §4 identified between this
+project's dictionary strategies and neural SOTA: an **averaged structured
+perceptron** BMES tagger over KCC clusters (Collins 2002 — the classic
+dependency-free stand-in for a CRF), decoded with Viterbi, deterministic
+in training and inference. Features per cluster: identity, neighbors at
+±1/±2, adjacent bigrams, cluster length. Like the HMM and the UnigramDp
+frequencies, **no trained model ships** (khPOS is CC BY-NC-SA); training
+here uses khPOS's train split (disjoint from OPEN-TEST), 5 epochs.
+
+khPOS OPEN-TEST (1,000 sentences), all rows `without_normalization()` for
+comparability with the tables above:
+
+| Configuration | P | R | F1 | R-iv | R-oov | WordAcc |
+|---|---|---|---|---|---|---|
+| FMM + HMM (prior fallback)       | 0.7224 | 0.7498 | 0.7358 | 0.8144 | 0.4020 | 0.3770 |
+| FMM + Tagger fallback            | 0.7260 | 0.7518 | 0.7387 | 0.8144 | 0.4150 | 0.3770 |
+| UnigramDp + HMM (prior best)     | 0.7611 | 0.8010 | 0.7805 | 0.8752 | 0.4014 | 0.3900 |
+| UnigramDp + Tagger fallback      | 0.7647 | 0.8030 | **0.7834** | 0.8752 | 0.4144 | 0.3900 |
+| **Tagger full (`Strategy::Tagger`)** | 0.9260 | 0.9341 | **0.9300** | 0.9409 | 0.8976 | 0.7850 |
+
+Reading it:
+
+- **As an OOV fallback**, the tagger is a strict upgrade over the HMM in
+  every configuration: R-oov 0.4020 → 0.4150 under FMM, and the best
+  hybrid F1 moves 0.7805 → 0.7834. R-iv is untouched (0.8752), by
+  construction — the fallback still only ever touches truly-unmatched
+  runs. When both are attached the tagger wins; `with_hmm` remains for
+  zero-training-cost setups.
+- **As a full segmenter** (`Strategy::Tagger`, dictionary ignored), it
+  jumps to **F1 0.9300** — a +0.15 absolute leap over the best dictionary
+  configuration, landing squarely in the CRF-tool tier RESEARCH-3
+  projected (khmercut-class, reported ~0.95 on comparable splits). Word
+  accuracy nearly doubles (0.39 → 0.785).
+- **Caveat on R-oov 0.8976:** "OOV" in this harness means *absent from
+  the 59,526-word chamkho dictionary* — the full tagger doesn't use that
+  dictionary, so this is not comparable to neural papers' OOV-vs-training
+  numbers (UnifiedCut's 0.613 is measured against its training
+  vocabulary). It *is* fair evidence that the tagger generalizes past the
+  dictionary's coverage.
+- **The trade**: `Strategy::Tagger` needs a trained model (a corpus you're
+  licensed to use) and gives up the dictionary strategies' zero-setup
+  determinism-by-construction. The dictionary tiers stay the default; the
+  tagger is opt-in, persisted via `TaggerModel::to_text`/`from_text`.
+- Historical rows were re-run and **reproduce byte-for-byte** — the
+  fallback-seam refactor (`apply_hmm_fallback` → `apply_oov_fallback`)
+  changed no existing behavior.

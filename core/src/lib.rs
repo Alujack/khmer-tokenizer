@@ -28,12 +28,14 @@ mod hmm;
 mod kcc;
 mod normalize;
 mod strategy;
+mod tagger;
 mod trie;
 
 pub use hmm::HmmModel;
 pub use kcc::{is_khmer, split_kcc};
 pub use normalize::normalize;
 pub use strategy::Strategy;
+pub use tagger::TaggerModel;
 pub use trie::KhmerTokenizer;
 
 /// The embedded default dictionary (59,526 words; see `ATTRIBUTION.md`): one

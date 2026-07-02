@@ -23,4 +23,11 @@ pub enum Strategy {
     /// Falls back to [`Strategy::ForwardMaxMatch`] if no frequencies were
     /// set — there's nothing to score without them.
     UnigramDp,
+    /// Full statistical BMES tagging: every Khmer run is segmented by the
+    /// [`TaggerModel`](crate::TaggerModel) attached with
+    /// [`KhmerTokenizer::with_tagger`](crate::KhmerTokenizer::with_tagger)'s
+    /// Viterbi decode, ignoring the dictionary entirely — the CRF-class
+    /// tier (see `docs/RESEARCH-3.md` §4). Falls back to
+    /// [`Strategy::ForwardMaxMatch`] if no tagger model was set.
+    Tagger,
 }

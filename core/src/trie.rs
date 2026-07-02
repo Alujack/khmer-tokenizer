@@ -6,6 +6,7 @@ use crate::hmm::HmmModel;
 use crate::kcc::{is_khmer, split_kcc};
 use crate::normalize::normalize;
 use crate::strategy::Strategy;
+use crate::tagger::TaggerModel;
 
 /// One node of the cluster trie. Edges are keyed on whole clusters (not raw
 /// chars), which is what lets the longest-match walk stay aligned to
@@ -39,6 +40,11 @@ pub struct KhmerTokenizer {
     /// 4), set with [`with_hmm`](KhmerTokenizer::with_hmm). `None` by
     /// default — unmatched clusters are emitted one per token, same as ever.
     hmm: Option<HmmModel>,
+    /// Optional averaged-perceptron BMES tagger, set with
+    /// [`with_tagger`](KhmerTokenizer::with_tagger). Serves two roles:
+    /// preferred OOV fallback (over `hmm`) for any dictionary strategy, and
+    /// the full segmenter under [`Strategy::Tagger`].
+    tagger: Option<TaggerModel>,
     /// Set by [`without_normalization`](KhmerTokenizer::without_normalization).
     /// `false` by default, meaning [`normalize`](crate::normalize) runs
     /// before every [`segment`](KhmerTokenizer::segment) call (Phase 5).
@@ -118,6 +124,24 @@ impl KhmerTokenizer {
     /// has been found (see `docs/ROADMAP.md` Phase 4).
     pub fn with_hmm(mut self, model: HmmModel) -> Self {
         self.hmm = Some(model);
+        self
+    }
+
+    /// Attach an averaged-perceptron BMES tagger (see
+    /// [`TaggerModel`](crate::TaggerModel)). Under any dictionary
+    /// [`Strategy`] it acts exactly like [`with_hmm`](KhmerTokenizer::with_hmm)
+    /// — only maximal runs of truly-unmatched clusters are re-segmented —
+    /// but with a context-feature model that generalizes better to unseen
+    /// words; if both a tagger and an HMM are attached, the tagger wins.
+    /// Under [`Strategy::Tagger`] it segments every Khmer run outright,
+    /// ignoring the dictionary.
+    ///
+    /// Ships with no default model — training needs a segmented corpus and
+    /// no bundleable, commercially-clean one has been found (see
+    /// `docs/ROADMAP.md`). Train one with
+    /// [`TaggerModel::train`](crate::TaggerModel::train).
+    pub fn with_tagger(mut self, model: TaggerModel) -> Self {
+        self.tagger = Some(model);
         self
     }
 
@@ -244,6 +268,7 @@ impl KhmerTokenizer {
                 i += 1;
             }
             let run = &clusters[start..i];
+            let full_tagger = matches!(self.strategy, Strategy::Tagger) && self.tagger.is_some();
             let run_tokens = match self.strategy {
                 Strategy::ForwardMaxMatch => forward_match(run, &self.root),
                 Strategy::BiMaxMatch => bimm(run, &self.root, &self.rev_root),
@@ -251,10 +276,22 @@ impl KhmerTokenizer {
                     unigram_dp(run, &self.root, &self.freq_counts, self.freq_total)
                 }
                 Strategy::UnigramDp => forward_match(run, &self.root),
+                Strategy::Tagger => match &self.tagger {
+                    Some(model) => model.segment_clusters(run),
+                    None => forward_match(run, &self.root),
+                },
             };
-            let run_tokens = match &self.hmm {
-                Some(model) => apply_hmm_fallback(run_tokens, &self.root, model),
-                None => run_tokens,
+            // OOV fallback for dictionary strategies: tagger preferred over
+            // HMM. Under a full-tagger segmentation there is no "unmatched"
+            // notion — the tagger's boundaries are final, so no fallback.
+            let run_tokens = if full_tagger {
+                run_tokens
+            } else if let Some(model) = &self.tagger {
+                apply_oov_fallback(run_tokens, &self.root, |cs| model.segment_clusters(cs))
+            } else if let Some(model) = &self.hmm {
+                apply_oov_fallback(run_tokens, &self.root, |cs| model.segment_oov(cs))
+            } else {
+                run_tokens
             };
             tokens.extend(run_tokens.into_iter().map(|cs| cs.concat()));
         }
@@ -436,14 +473,15 @@ fn is_dict_word(root: &TrieNode, clusters: &[String]) -> bool {
 
 /// Replace maximal runs of dictionary-fallback single clusters — spots
 /// where a strategy found no dictionary match at all, not genuine
-/// single-cluster words — with the HMM's Viterbi-decoded guess. This is
+/// single-cluster words — with a model's Viterbi-decoded guess
+/// (`resegment`: the HMM's or the perceptron tagger's). This is
 /// strategy-agnostic: it only looks at whether each already-produced token
 /// is a real dictionary hit, so it composes with FMM, BiMM, and UnigramDp
 /// output alike.
-fn apply_hmm_fallback(
+fn apply_oov_fallback(
     tokens: Vec<Vec<String>>,
     root: &TrieNode,
-    hmm: &HmmModel,
+    resegment: impl Fn(&[String]) -> Vec<Vec<String>>,
 ) -> Vec<Vec<String>> {
     let mut out = Vec::with_capacity(tokens.len());
     let mut buffer: Vec<String> = Vec::new();
@@ -454,13 +492,13 @@ fn apply_hmm_fallback(
             continue;
         }
         if !buffer.is_empty() {
-            out.extend(hmm.segment_oov(&buffer));
+            out.extend(resegment(&buffer));
             buffer.clear();
         }
         out.push(token);
     }
     if !buffer.is_empty() {
-        out.extend(hmm.segment_oov(&buffer));
+        out.extend(resegment(&buffer));
     }
     out
 }
@@ -585,6 +623,53 @@ mod tests {
         // The real dictionary hit "ក" is untouched; only the unmatched tail
         // is re-segmented, and by the HMM's tags rather than one-per-cluster.
         assert_eq!(tk.segment("កខគង"), vec!["ក", "ខគ", "ង"]);
+    }
+
+    #[test]
+    fn tagger_fallback_resegments_only_the_truly_oov_run() {
+        use crate::tagger::TaggerModel;
+
+        // Train a tiny tagger where "ខគ" (clusters ["ខ","គ"]) is one word
+        // and "ង" stands alone.
+        let s = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        let model = TaggerModel::train(
+            &[s(&["ខគ", "ង"]), s(&["ង", "ខគ"]), s(&["ខគ"]), s(&["ង"])],
+            5,
+        );
+
+        // "ក" is a real dictionary word; the ["ខ","គ","ង"] tail matches
+        // nothing, so without a model it degrades to one token per cluster.
+        let tk = KhmerTokenizer::from_words(["ក"]);
+        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខ", "គ", "ង"]);
+
+        // With the tagger attached, the dictionary hit is untouched and
+        // only the unmatched tail is re-segmented by the learned tags.
+        let tk = tk.with_tagger(model);
+        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខគ", "ង"]);
+    }
+
+    #[test]
+    fn strategy_tagger_segments_full_runs_ignoring_the_dictionary() {
+        use crate::tagger::TaggerModel;
+
+        // The tagger has learned "ក" and "ខ" as separate words...
+        let s = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        let model = TaggerModel::train(&[s(&["ក", "ខ"]), s(&["ខ", "ក"]), s(&["ក"])], 5);
+
+        // ...while the dictionary says "កខ" is one word. Under a dictionary
+        // strategy the dictionary wins; under Strategy::Tagger the model's
+        // boundaries are final.
+        let tk = KhmerTokenizer::from_words(["កខ"]);
+        assert_eq!(tk.segment("កខ"), vec!["កខ"]);
+
+        let tk = tk.with_strategy(Strategy::Tagger).with_tagger(model);
+        assert_eq!(tk.segment("កខ"), vec!["ក", "ខ"]);
+    }
+
+    #[test]
+    fn strategy_tagger_falls_back_to_forward_match_without_a_model() {
+        let tk = KhmerTokenizer::from_words(["កម្ពុជា"]).with_strategy(Strategy::Tagger);
+        assert_eq!(tk.segment("កម្ពុជា"), vec!["កម្ពុជា"]);
     }
 
     #[test]

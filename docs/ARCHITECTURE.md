@@ -36,7 +36,7 @@ model training later.
 | HMM OOV fallback | `core/src/hmm.rs`      | guess boundaries where the dictionary matched nothing at all | ✅ built (Phase 4 — see below) |
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Regression guard | `eval/tests/regression.rs` + CI | fail the build if accuracy silently rots | ✅ built (Phase 6 — see below) |
-| Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
+| Statistical tagger | `core/src/tagger.rs` | CRF-class averaged-perceptron BMES tagger: OOV fallback (`with_tagger`) or full segmenter (`Strategy::Tagger`); no model ships — train + persist your own | ✅ built (F1 0.93 full-mode on khPOS — see BENCHMARKS.md) |
 | Bindings         | `py/` (PyO3), `wasm/`  | run from Python and JS/browser               | ✅ Python on PyPI (`pip install khmer-tokenizer`; release workflow builds all-platform wheels); ✅ WASM on npm (`npm install kh-tokenizer`) |
 
 ## Today's default pipeline (`Strategy::ForwardMaxMatch`)

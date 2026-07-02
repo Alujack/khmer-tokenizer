@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use crate::hmm::HmmModel;
 use crate::kcc::{is_khmer, split_kcc};
 use crate::strategy::Strategy;
 
@@ -33,6 +34,10 @@ pub struct KhmerTokenizer {
     /// dictionary notes in the project README for why).
     freq_counts: HashMap<String, u64>,
     freq_total: u64,
+    /// Optional HMM fallback for clusters no strategy matched at all (Phase
+    /// 4), set with [`with_hmm`](KhmerTokenizer::with_hmm). `None` by
+    /// default — unmatched clusters are emitted one per token, same as ever.
+    hmm: Option<HmmModel>,
 }
 
 impl KhmerTokenizer {
@@ -91,6 +96,23 @@ impl KhmerTokenizer {
         let counts: HashMap<String, u64> = counts.into_iter().collect();
         self.freq_total = counts.values().sum();
         self.freq_counts = counts;
+        self
+    }
+
+    /// Attach an HMM fallback for clusters that no strategy could match in
+    /// the dictionary at all — the case that still degrades to one token per
+    /// cluster otherwise. Chains onto any constructor and composes with any
+    /// [`Strategy`]: matched dictionary tokens (including genuine
+    /// single-cluster words) are left untouched; only maximal runs of
+    /// truly-unmatched clusters get re-segmented by the model's
+    /// Viterbi-decoded BMES tags.
+    ///
+    /// Ships with no default model — like
+    /// [`with_frequencies`](KhmerTokenizer::with_frequencies), training
+    /// needs a segmented corpus and no bundleable, commercially-clean one
+    /// has been found (see `docs/ROADMAP.md` Phase 4).
+    pub fn with_hmm(mut self, model: HmmModel) -> Self {
+        self.hmm = Some(model);
         self
     }
 
@@ -195,6 +217,10 @@ impl KhmerTokenizer {
                     unigram_dp(run, &self.root, &self.freq_counts, self.freq_total)
                 }
                 Strategy::UnigramDp => forward_match(run, &self.root),
+            };
+            let run_tokens = match &self.hmm {
+                Some(model) => apply_hmm_fallback(run_tokens, &self.root, model),
+                None => run_tokens,
             };
             tokens.extend(run_tokens.into_iter().map(|cs| cs.concat()));
         }
@@ -352,6 +378,49 @@ fn unigram_dp(
     tokens
 }
 
+/// True if the exact cluster sequence is a dictionary entry.
+fn is_dict_word(root: &TrieNode, clusters: &[String]) -> bool {
+    let mut node = root;
+    for cl in clusters {
+        match node.children.get(cl) {
+            Some(next) => node = next,
+            None => return false,
+        }
+    }
+    node.is_word
+}
+
+/// Replace maximal runs of dictionary-fallback single clusters — spots
+/// where a strategy found no dictionary match at all, not genuine
+/// single-cluster words — with the HMM's Viterbi-decoded guess. This is
+/// strategy-agnostic: it only looks at whether each already-produced token
+/// is a real dictionary hit, so it composes with FMM, BiMM, and UnigramDp
+/// output alike.
+fn apply_hmm_fallback(
+    tokens: Vec<Vec<String>>,
+    root: &TrieNode,
+    hmm: &HmmModel,
+) -> Vec<Vec<String>> {
+    let mut out = Vec::with_capacity(tokens.len());
+    let mut buffer: Vec<String> = Vec::new();
+
+    for token in tokens {
+        if token.len() == 1 && !is_dict_word(root, &token) {
+            buffer.push(token.into_iter().next().unwrap());
+            continue;
+        }
+        if !buffer.is_empty() {
+            out.extend(hmm.segment_oov(&buffer));
+            buffer.clear();
+        }
+        out.push(token);
+    }
+    if !buffer.is_empty() {
+        out.extend(hmm.segment_oov(&buffer));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,5 +511,35 @@ mod tests {
         ];
         let tk = tk.with_strategy(Strategy::UnigramDp).with_frequencies(freqs);
         assert_eq!(tk.segment("កខគ"), vec!["ក", "ខគ"]);
+    }
+
+    #[test]
+    fn hmm_fallback_resegments_only_the_truly_oov_run() {
+        use crate::hmm::HmmModel;
+        use std::collections::HashMap;
+
+        // "ក" is a real dictionary word; "ខ", "គ", "ង" are not, so with no
+        // HMM attached forward-max-match would emit ["ក", "ខ", "គ", "ង"] —
+        // one cluster per token for the whole unmatched tail.
+        let tk = KhmerTokenizer::from_words(["ក"]);
+        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខ", "គ", "ង"]);
+
+        // Craft an HMM that decisively resegments an unmatched ["ខ","គ","ង"]
+        // run into ["ខគ", "ង"] (Begin, End, Single) instead of 3 loose
+        // single-cluster tokens.
+        let start = [50, 0, 0, 0]; // Begin
+        let mut trans = [[0u64; 4]; 4];
+        trans[0][2] = 50; // Begin -> End
+        trans[2][3] = 50; // End -> Single
+        let mut emit = HashMap::new();
+        emit.insert("ខ".to_string(), [50, 0, 0, 0]); // Begin
+        emit.insert("គ".to_string(), [0, 0, 50, 0]); // End
+        emit.insert("ង".to_string(), [0, 0, 0, 50]); // Single
+        let model = HmmModel::from_counts(start, trans, emit);
+
+        let tk = tk.with_hmm(model);
+        // The real dictionary hit "ក" is untouched; only the unmatched tail
+        // is re-segmented, and by the HMM's tags rather than one-per-cluster.
+        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខគ", "ង"]);
     }
 }

@@ -33,6 +33,7 @@ model training later.
 | CLI              | `cli/src/main.rs`        | run it from the terminal / pipes             | ✅ built   |
 | Normalizer       | `core/src/normalize.rs`  | canonicalize Unicode ordering variants       | 🔜 Phase 5 |
 | Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | ✅ built (FMM, BiMM, UnigramDp — see below) |
+| HMM OOV fallback | `core/src/hmm.rs`      | guess boundaries where the dictionary matched nothing at all | ✅ built (Phase 4 — see below) |
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
 | Bindings         | `wasm/`, `py/`         | run from JS/browser and Python               | 🔭 future  |
@@ -100,6 +101,47 @@ structural difference is why it measurably outperforms BiMM in
 
 A user who writes `tokenizer.segment(text)` today keeps working when you later
 drop in a trained model. That stability is what lets you experiment freely.
+
+## The HMM OOV fallback (built, Phase 4)
+
+Every strategy above shares one blind spot: when a run of clusters matches
+*nothing* in the dictionary, they all fall back to one token per cluster —
+`Strategy` only ever chooses between different ways of walking the trie, and
+a trie has nothing to say about clusters it has no entry for at all. That's
+what `R-oov` in `docs/BENCHMARKS.md` measures, and why it stayed flat
+(~0.35) across all three Phase 3 strategies.
+
+`KhmerTokenizer::with_hmm(...)` is an orthogonal knob, not a fourth
+`Strategy` variant, because it operates on the *output* of whichever
+strategy ran, not on the trie walk itself:
+
+```mermaid
+flowchart LR
+    S[Strategy output<br/>tokens] --> C{token is a single<br/>cluster AND not a<br/>real dictionary word?}
+    C -->|no| KEEP[keep token as-is]
+    C -->|yes| BUF[buffer cluster]
+    BUF --> RUN{next token breaks<br/>the buffer?}
+    RUN -->|yes| HMM[HMM Viterbi<br/>BMES decode]
+    HMM --> OUT[replacement tokens]
+    KEEP --> OUT2[tokens]
+    OUT --> OUT2
+```
+
+Concretely (`trie.rs`'s `apply_hmm_fallback` + `is_dict_word`): scan the
+strategy's token output; any *maximal run* of single-cluster tokens that
+aren't themselves dictionary entries gets buffered and handed to
+`HmmModel::segment_oov`, which Viterbi-decodes the most likely BMES
+(Begin/Middle/End/Single) tag sequence and converts it to token boundaries.
+Every other token — including genuine single-cluster dictionary words —
+passes through untouched. That untouched-ness is why it composed cleanly
+with both `ForwardMaxMatch` and `UnigramDp` with **zero measured R-iv
+cost** (see `docs/BENCHMARKS.md` Phase 4): it structurally cannot affect a
+token the trie walk already matched.
+
+Same posture as `UnigramDp`'s frequencies: no trained `HmmModel` ships with
+the crate (see `ATTRIBUTION.md`) — callers build one with
+`HmmModel::from_counts(...)` from a segmented corpus they're licensed to
+use.
 
 ## The data flywheel (how massive data plugs in)
 

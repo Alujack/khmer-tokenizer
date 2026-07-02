@@ -24,10 +24,12 @@
 //! assert_eq!(tokens, vec!["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]);
 //! ```
 
+mod hmm;
 mod kcc;
 mod strategy;
 mod trie;
 
+pub use hmm::HmmModel;
 pub use kcc::{is_khmer, split_kcc};
 pub use strategy::Strategy;
 pub use trie::KhmerTokenizer;

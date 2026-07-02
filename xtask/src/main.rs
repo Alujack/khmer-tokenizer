@@ -12,9 +12,9 @@ mod report;
 use std::fs;
 use std::path::Path;
 
-use khmer_tokenizer_core::{KhmerTokenizer, Strategy};
+use khmer_tokenizer_core::{HmmModel, KhmerTokenizer, Strategy};
 use khmer_tokenizer_eval::corpus::{self, Split};
-use khmer_tokenizer_eval::{count_frequencies, evaluate};
+use khmer_tokenizer_eval::{count_frequencies, evaluate, train_hmm};
 
 fn main() {
     match std::env::args().nth(1).as_deref() {
@@ -64,9 +64,27 @@ fn run_eval() {
 
     let tokenizer = KhmerTokenizer::with_default_dict()
         .with_strategy(Strategy::UnigramDp)
-        .with_frequencies(freqs);
+        .with_frequencies(freqs.clone());
     let metrics = evaluate(&examples, &tokenizer);
     report::print_table("UnigramDp (freq: khPOS train, local-only)", &metrics);
+
+    // Phase 4: HMM fallback for clusters that no strategy matched in the
+    // dictionary at all. Same licensing posture as the frequencies above:
+    // BMES tag counts are trained from khPOS's train split for local
+    // evaluation only — never bundled, committed, or shipped.
+    let hmm_counts = train_hmm(&train_examples);
+    let hmm_model = HmmModel::from_counts(hmm_counts.start, hmm_counts.trans, hmm_counts.emit);
+
+    let tokenizer = KhmerTokenizer::with_default_dict().with_hmm(hmm_model.clone());
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("ForwardMaxMatch + HMM (khPOS train, local-only)", &metrics);
+
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_strategy(Strategy::UnigramDp)
+        .with_frequencies(freqs)
+        .with_hmm(hmm_model);
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("UnigramDp + HMM (khPOS train, local-only)", &metrics);
 }
 
 fn run_prepare_dict() {

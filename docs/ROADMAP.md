@@ -10,7 +10,10 @@ with the 59,526-word dictionary from Phase 2. `Strategy::BiMaxMatch` and
 [BENCHMARKS.md](./BENCHMARKS.md) (FMM: F1 0.7216; BiMM: F1 0.7255; UnigramDp:
 F1 0.7661, all against khPOS OPEN-TEST). `UnigramDp` is the clear winner when
 frequencies are available, but the crate ships none by default (see Phase 3
-below), so `ForwardMaxMatch` stays the enum's `#[default]`.
+below), so `ForwardMaxMatch` stays the enum's `#[default]`. `KhmerTokenizer::with_hmm(...)`
+(Phase 4, done) composes with any strategy and lifts R-oov by ~0.05 absolute
+with zero R-iv cost (best measured: UnigramDp + HMM, F1 0.7805) — same
+"needs a caller-supplied model" posture as `UnigramDp`'s frequencies.
 
 ---
 
@@ -111,7 +114,7 @@ below), so `ForwardMaxMatch` stays the enum's `#[default]`.
 forward-MM. **Met** — both do; `UnigramDp`'s gain is the larger one, as
 predicted.
 
-## Phase 4 — Unknown-word handling
+## Phase 4 — Unknown-word handling ✅
 
 **Goal:** stop emitting one-cluster-per-token on out-of-vocabulary runs.
 
@@ -119,13 +122,31 @@ predicted.
       across FMM/BiMM/UnigramDp (0.3505 / 0.3493 / 0.3499 — see
       `BENCHMARKS.md`). Confirms none of the Phase 3 strategies touch OOV
       handling; this phase is the first one that will.
-- [ ] Add a lightweight cluster-level **HMM + Viterbi** (BMES states) for runs the
-      dictionary misses, mirroring jieba's OOV layer. Train counts from a
-      segmented corpus (document the NC-license constraint on shipping any
-      derived model).
-- [ ] Re-measure R-oov; gate behind a strategy flag if it costs IV accuracy.
+- [x] Added a lightweight cluster-level **HMM + Viterbi** (BMES states,
+      `core/src/hmm.rs`: `HmmModel::from_counts` + `segment_oov`), mirroring
+      jieba's OOV layer. It's a post-process, not a new `Strategy` variant:
+      `KhmerTokenizer::with_hmm(...)` composes with any strategy, and only
+      re-segments maximal runs of clusters that strategy matched *nothing*
+      in the dictionary for — every genuine dictionary hit (including real
+      single-cluster words) passes through untouched (`is_dict_word` check
+      in `trie.rs`'s `apply_hmm_fallback`). Counts trained from a segmented
+      corpus via `eval::train_hmm` (`eval/src/hmm.rs`): BMES tags per gold
+      word (Single for 1 cluster, Begin/Middle*/End for 2+), counted across
+      khPOS's `before-replace/train6.word` split — same CC BY-NC-SA,
+      local-eval-only constraint already established for `UnigramDp`'s
+      frequencies (see `ATTRIBUTION.md`). No derived model ships with the
+      crate; `with_hmm` requires the caller to supply one, exactly like
+      `with_frequencies`.
+- [x] Re-measured R-oov (`docs/BENCHMARKS.md`): **0.3505 → 0.4020** on top of
+      `ForwardMaxMatch`, **0.3499 → 0.4014** on top of `UnigramDp` — and
+      **R-iv is exactly unchanged** in both cases (0.8144 → 0.8144, 0.8752 →
+      0.8752), confirming the strategy-agnostic, dictionary-hits-untouched
+      design costs zero IV accuracy in practice. No additional gating beyond
+      the existing opt-in (`with_hmm` is `None` unless attached) was needed.
 
-*Exit criteria:* R-oov improves without regressing overall F1.
+*Exit criteria:* R-oov improves without regressing overall F1. **Met** —
+R-oov +0.05 absolute, F1 also improves (0.7216 → 0.7358 FMM+HMM; 0.7661 →
+0.7805 UnigramDp+HMM, the best configuration measured to date).
 
 ## Phase 5 — Orthographic normalization
 

@@ -56,3 +56,15 @@ it is never written to a committed file, bundled in `core/src/dict.txt`, or
 shipped in any binary. Production use of `UnigramDp` requires supplying your
 own frequency table via `KhmerTokenizer::with_frequencies(...)`, sourced
 under a license appropriate to your use case.
+
+## HMM fallback (`HmmModel`, Phase 4 OOV handling) — not bundled, evaluation-only
+
+`cargo xtask eval` also trains BMES (Begin/Middle/End/Single) tag counts from
+the same khPOS `before-replace/train6.word` split (CC BY-NC-SA 4.0) to
+benchmark `KhmerTokenizer::with_hmm(...)` (see `docs/BENCHMARKS.md` Phase 4).
+Exactly the same posture as the frequency table above applies: these counts
+are computed **at eval time only**, never written to a committed file,
+bundled in the crate, or shipped in any binary. Production use of the HMM
+fallback requires building your own model with
+`HmmModel::from_counts(...)` from a segmented corpus you're licensed to use,
+then attaching it via `KhmerTokenizer::with_hmm(...)`.

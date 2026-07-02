@@ -41,6 +41,15 @@ Segmentation runs in two passes:
 
    Either way, runs of non-Khmer text (Latin, digits, punctuation) become
    their own tokens, and whitespace separates tokens without producing one.
+3. **OOV fallback (optional)** — every strategy above still falls back to one
+   token per cluster when a run matches *nothing* in the dictionary at all.
+   Attaching an [`HmmModel`](core/src/hmm.rs) via `with_hmm(...)` replaces
+   just those unmatched runs with a Viterbi-decoded BMES guess instead,
+   leaving every dictionary hit (including real single-cluster words)
+   untouched — lifts out-of-vocabulary recall by ~0.05 absolute with no
+   measured cost to in-vocabulary accuracy (see
+   [BENCHMARKS.md](docs/BENCHMARKS.md)). Needs a model you train yourself;
+   none ships with this crate (same reason as `UnigramDp`'s frequencies).
 
 The engine is `std`-only and deterministic. No model, no training step, no
 network.
@@ -82,6 +91,12 @@ let freqs = [("ភាសា".to_string(), 500), ("ខ្មែរ".to_string(), 
 let tk = KhmerTokenizer::with_default_dict()
     .with_strategy(Strategy::UnigramDp)
     .with_frequencies(freqs);
+
+// Any strategy can add an HMM fallback for clusters the dictionary matches
+// nothing in at all — trained yourself (BMES tag counts) from a segmented
+// corpus with HmmModel::from_counts(start_counts, trans_counts, emit_counts).
+use khmer_tokenizer_core::HmmModel;
+let tk = KhmerTokenizer::with_default_dict().with_hmm(my_hmm_model);
 
 // Need just the orthographic clusters?
 use khmer_tokenizer_core::split_kcc;
@@ -139,7 +154,9 @@ cargo test
 Covers KCC splitting (subscripts and vowels stay attached), all three
 segmentation strategies (forward max-match, bidirectional max-match, and
 unigram DP — including a hand-built case where only DP-based scoring can
-reach the correct segmentation), mixed Khmer/Latin/number input, the
+reach the correct segmentation), the HMM OOV fallback (a hand-built BMES
+model that resegments an unmatched cluster run while leaving a real
+dictionary hit alone), mixed Khmer/Latin/number input, the
 out-of-vocabulary fallback, and dictionary loading.
 
 ## Roadmap
@@ -155,12 +172,12 @@ Designed so these slot in without restructuring the workspace:
   bundleable corpus-frequency source has been found yet (see
   [docs/ROADMAP.md](docs/ROADMAP.md) Phase 3); until then, callers supply
   their own via `with_frequencies(...)`.
-- **CLI support for `UnigramDp`** — the CLI has no mechanism yet to load an
-  external frequency file, so `--strategy` only exposes `fmm`/`bimm`.
-- **HMM/Viterbi fallback for OOV runs** (Phase 4) — `UnigramDp`'s frequency
-  scoring disambiguates between competing dictionary matches, but doesn't
-  help clusters the dictionary has zero matches for at all (R-oov is flat at
-  ~0.35 across all three strategies — see `docs/BENCHMARKS.md`).
+- **CLI support for `UnigramDp` and `with_hmm`** — the CLI has no mechanism
+  yet to load an external frequency table or HMM model file, so
+  `--strategy` only exposes `fmm`/`bimm`.
+- **Orthographic normalization** (Phase 5) — canonicalize Unicode ordering
+  variants before segmentation, so dictionary lookups stop missing hits
+  purely because of encoding differences.
 
 ## License
 

@@ -17,6 +17,8 @@ with a fully correct token sequence).
 | 2026-07-01 | ForwardMaxMatch | chamkho khmerdict.txt (59,526 words)      | 0.7026 | 0.7417 | 0.7216 | 0.8144 | 0.3505 | 0.3650   | khPOS OPEN-TEST |
 | 2026-07-01 | BiMaxMatch      | chamkho khmerdict.txt (59,526 words)      | 0.7072 | 0.7449 | 0.7255 | 0.8184 | 0.3493 | 0.3650   | khPOS OPEN-TEST |
 | 2026-07-01 | UnigramDp       | chamkho khmerdict.txt + khPOS-train freqs | 0.7410 | 0.7929 | 0.7661 | 0.8752 | 0.3499 | 0.3770   | khPOS OPEN-TEST |
+| 2026-07-02 | ForwardMaxMatch + HMM | chamkho khmerdict.txt + khPOS-train BMES counts | 0.7224 | 0.7498 | 0.7358 | 0.8144 | 0.4020 | 0.3770   | khPOS OPEN-TEST |
+| 2026-07-02 | UnigramDp + HMM | chamkho khmerdict.txt + khPOS-train freqs + BMES counts | 0.7611 | 0.8010 | 0.7805 | 0.8752 | 0.4014 | 0.3900   | khPOS OPEN-TEST |
 
 ## Reading Phase 1's baseline (~100-word seed dict)
 
@@ -99,3 +101,38 @@ own — so changing the nominal default wouldn't change any out-of-the-box
 behavior. The real, actionable finding: **use `UnigramDp` with your own
 frequency table whenever you have one** — it's the best of the three by a
 clear margin.
+
+## Reading Phase 4's result (HMM fallback for OOV runs)
+
+Training data: BMES tag counts gathered from khPOS's `before-replace/train6.word`
+split (same split, same disjointness/leakage caveat as `UnigramDp`'s
+frequencies above — see `docs/ROADMAP.md` Phase 4 and `ATTRIBUTION.md`).
+`with_hmm(...)` composes with any `Strategy`; it only re-segments maximal runs
+of clusters that strategy matched *nothing* in the dictionary for at all —
+every genuine dictionary hit (including real single-cluster words) is passed
+through untouched. Measured on top of both the weakest and strongest Phase 3
+strategy to see whether that holds:
+
+- **R-oov 0.3505 → 0.4020 (FMM+HMM)** and **0.3499 → 0.4014 (UnigramDp+HMM)** —
+  roughly a 5-point absolute (~15% relative) recall gain on exactly the
+  words neither dictionary coverage nor frequency scoring could ever touch,
+  confirming the roadmap's framing: R-oov was flat across all of Phase 3
+  because none of those strategies do anything for clusters with zero
+  dictionary matches — this is the first change that does.
+- **R-iv exactly unchanged (0.8144 → 0.8144, 0.8752 → 0.8752):** the
+  strategy-agnostic design — only ever touching runs of already-established
+  dictionary-fallback single clusters — costs zero in-vocabulary accuracy in
+  practice, not just in principle. This resolves the roadmap's "gate behind a
+  strategy flag if it costs IV accuracy" condition: it doesn't cost anything
+  measured here, so the existing opt-in (`with_hmm(...)` is `None` unless a
+  caller attaches a model, exactly like `with_frequencies`) is gate enough —
+  no additional `Strategy` variant needed.
+- **F1 also improves** (0.7216 → 0.7358 FMM; 0.7661 → 0.7805 UnigramDp) and
+  **word accuracy ticks up** (0.3650 → 0.3770; 0.3770 → 0.3900) — since R-oov
+  recall gains flow straight into fewer over-segmented sentences, on top of
+  whatever the base strategy already got right.
+- **UnigramDp + HMM is the best configuration measured to date** (F1 0.7805,
+  R-iv 0.8752, R-oov 0.4014) — the two Phase 3/4 levers (frequency-scored
+  dictionary matches, statistically-guessed OOV runs) are complementary, not
+  overlapping: one only ever operates where the dictionary matched something,
+  the other only where it matched nothing.

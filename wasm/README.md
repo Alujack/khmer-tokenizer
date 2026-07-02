@@ -15,6 +15,7 @@ tokenizers either ignore Khmer or shatter it into meaningless character
 fragments; this package segments it correctly.
 
 ```js
+// npm install kh-tokenizer
 import { KhmerTokenizer, splitKcc, normalize, isKhmer } from "kh-tokenizer";
 
 const tk = new KhmerTokenizer(); // embedded 59k-word dictionary, forward max-match

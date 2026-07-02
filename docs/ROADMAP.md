@@ -285,7 +285,9 @@ comes next:
       `kh-tokenizer` so wasm-pack generates the right package, and
       `wasm/prepare-npm-pkg.js` patches the generated package.json
       (licenses into "files", keywords, homepage) before `npm publish`.
-      The npm release itself (account + publish) is the remaining step.
+      **Published to npm as `kh-tokenizer` 0.1.0 (2026-07-02)** —
+      verified by installing from the public registry and segmenting
+      through it.
 - [ ] **Explicit non-goal:** chasing neural-SOTA accuracy (UnifiedCut:
       F1 0.985 on khPOS — but OOV recall still only 0.613) inside this
       crate. Users needing that should use a neural tool; this crate's

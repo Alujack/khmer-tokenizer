@@ -191,10 +191,15 @@ impl KhmerTokenizer {
     ///
     /// Non-Khmer runs (Latin, digits, punctuation) are always grouped
     /// greedily into their own tokens, and whitespace separates tokens
-    /// without producing one. Khmer runs are segmented using the tokenizer's
-    /// [`Strategy`] (default [`Strategy::ForwardMaxMatch`]: consume the
-    /// longest run of clusters that forms a dictionary word at each
-    /// position, falling back to a single cluster when nothing matches).
+    /// without producing one. `U+200B` ZERO WIDTH SPACE is treated the same
+    /// way: it's the character the Unicode Standard recommends for marking
+    /// Khmer word boundaries, so real-world Khmer text is full of them as
+    /// invisible boundary hints — each one is trusted as an authoritative
+    /// word boundary and consumed without producing a token. Khmer runs are
+    /// segmented using the tokenizer's [`Strategy`] (default
+    /// [`Strategy::ForwardMaxMatch`]: consume the longest run of clusters
+    /// that forms a dictionary word at each position, falling back to a
+    /// single cluster when nothing matches).
     pub fn segment(&self, text: &str) -> Vec<String> {
         let owned;
         let text: &str = if self.normalization_disabled {
@@ -211,20 +216,20 @@ impl KhmerTokenizer {
         while i < n {
             let cl = &clusters[i];
 
-            // Whitespace acts as a separator and emits nothing.
-            if cl.trim().is_empty() {
+            // Whitespace and ZWSP act as separators and emit nothing.
+            if is_separator(cl) {
                 i += 1;
                 continue;
             }
 
             let first = cl.chars().next().unwrap();
 
-            // Non-Khmer run: group consecutive non-space, non-Khmer clusters
-            // (e.g. "Rust", "2026") into a single token.
+            // Non-Khmer run: group consecutive non-separator, non-Khmer
+            // clusters (e.g. "Rust", "2026") into a single token.
             if !is_khmer(first) {
                 let start = i;
                 while i < n
-                    && !clusters[i].trim().is_empty()
+                    && !is_separator(&clusters[i])
                     && !is_khmer(clusters[i].chars().next().unwrap())
                 {
                     i += 1;
@@ -256,6 +261,16 @@ impl KhmerTokenizer {
 
         tokens
     }
+}
+
+/// True for a cluster that separates tokens without producing one: any
+/// whitespace, or `U+200B` ZERO WIDTH SPACE — the character the Unicode
+/// Standard recommends as the Khmer word-boundary marker. ZWSP is not
+/// Unicode `White_Space` (so `trim()` alone doesn't catch it), and
+/// [`split_kcc`](crate::split_kcc) always emits it as its own single-char
+/// cluster, so an exact comparison suffices.
+fn is_separator(cl: &str) -> bool {
+    cl.trim().is_empty() || cl == "\u{200B}"
 }
 
 /// Greedy longest-match walk over `clusters`, consuming the longest run that
@@ -570,6 +585,31 @@ mod tests {
         // The real dictionary hit "ក" is untouched; only the unmatched tail
         // is re-segmented, and by the HMM's tags rather than one-per-cluster.
         assert_eq!(tk.segment("កខគង"), vec!["ក", "ខគ", "ង"]);
+    }
+
+    #[test]
+    fn zwsp_separates_tokens_without_producing_one() {
+        // U+200B ZWSP is the Unicode-recommended Khmer word-boundary
+        // marker; real-world Khmer web text is full of them. Each one is
+        // consumed as a separator, never emitted as a token.
+        let tk = KhmerTokenizer::from_words(["សួស្តី", "អ្នក"]);
+        assert_eq!(tk.segment("សួស្តី\u{200B}អ្នក"), vec!["សួស្តី", "អ្នក"]);
+    }
+
+    #[test]
+    fn zwsp_is_trusted_as_a_hard_word_boundary() {
+        // Even when the dictionary contains a word spanning the ZWSP
+        // position, the author's explicit boundary wins — the trie walk
+        // must not merge across it.
+        let tk = KhmerTokenizer::from_words(["កខ"]);
+        assert_eq!(tk.segment("កខ"), vec!["កខ"]); // sanity: merges without ZWSP
+        assert_eq!(tk.segment("ក\u{200B}ខ"), vec!["ក", "ខ"]);
+    }
+
+    #[test]
+    fn zwsp_splits_non_khmer_runs_too() {
+        let tk = KhmerTokenizer::empty();
+        assert_eq!(tk.segment("Hello\u{200B}World"), vec!["Hello", "World"]);
     }
 
     #[test]

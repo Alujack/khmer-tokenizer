@@ -55,7 +55,10 @@ What happens, in words: the text is first passed through the normalizer
 clusters so a base letter never gets cut away from its subscripts/vowels;
 then the segmenter walks a trie built from the dictionary and, at each
 position, takes the longest run of clusters that spells a real word. No
-match → it emits one cluster and moves on. Deterministic, no model,
+match → it emits one cluster and moves on. Whitespace and `U+200B` ZERO
+WIDTH SPACE (the Unicode-recommended Khmer word-boundary marker, common as
+an invisible hint in real Khmer web text) act as trusted separators —
+consumed, never emitted, never merged across. Deterministic, no model,
 microsecond-fast.
 
 ## The normalizer (built, Phase 5)
@@ -71,13 +74,20 @@ spelling of the same word produce two *different* cluster strings — so the
 dictionary trie, keyed on exact cluster sequences, needs both spellings
 listed separately to match either one.
 
-`normalize()` fixes this before clustering ever runs: it detects a mark
-immediately followed by a `COENG`+consonant pair and moves the mark after
-it, repeating to a fixed point so it cascades through multiple stacked
-subscripts. It's pure character reordering — never adds or removes a
-character — so it's byte-length-preserving and never shifts token
+`normalize()` fixes this before clustering ever runs, with two mirror-image
+rules run to a fixed point: a mark immediately *before* a `COENG`+consonant
+pair moves after it (the typed-error form), and a mark stranded *between*
+`COENG` and its consonant moves past the consonant — that second form is
+what Unicode NFC itself produces on Khmer text, because Khmer's canonical
+combining classes are erroneous and frozen (ccc(COENG)=9 vs
+ccc(ATTHACAN)=230 — see `docs/RESEARCH-3.md` §2a), making every
+NFC-processing pipeline a standing corruption vector this repairs. Both
+rules are pure character reordering — never adding or removing a character
+— so normalization is byte-length-preserving and never shifts token
 boundaries relative to the raw input's byte offsets, which matters because
-the eval harness's span-based scoring depends on that alignment.
+the eval harness's span-based scoring depends on that alignment. Robat and
+the zero-width joiners are exempt from both rules (Robat legitimately
+precedes the subscript stack; ZWNJ/ZWJ meaning is position-sensitive).
 
 Measured contribution on khPOS + the bundled dictionary is **exactly
 zero** (see `docs/BENCHMARKS.md` Phase 5) — not because the fix doesn't

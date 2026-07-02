@@ -19,7 +19,7 @@ pub(crate) const ROBAT: char = '\u{17CC}';
 
 /// A Khmer *base*: consonants (`U+1780..=U+17A2`) and independent vowels
 /// (`U+17A3..=U+17B3`). A cluster always begins with one of these.
-fn is_khmer_base(c: char) -> bool {
+pub(crate) fn is_khmer_base(c: char) -> bool {
     matches!(c as u32, 0x1780..=0x17B3)
 }
 

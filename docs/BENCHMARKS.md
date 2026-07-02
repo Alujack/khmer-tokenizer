@@ -215,3 +215,41 @@ Reading it:
   cross-corpus-comparable numbers.
 - **Phase 5's "normalization ≈ zero effect" replicates** at 80× the sample
   size (F1 0.7044 → 0.7045).
+
+## Post-roadmap changes from RESEARCH-3 (NFC repair rule + ZWSP boundaries)
+
+Two changes landed after Phase 6, driven by the verified findings in
+[RESEARCH-3.md](./RESEARCH-3.md) §2:
+
+1. **Normalizer rule 2** (`core/src/normalize.rs`): repairs a mark stranded
+   between `COENG` and its consonant — the corruption Unicode NFC itself
+   inflicts on Khmer text (erroneous, permanently frozen canonical
+   combining classes; reproduced locally with `unicodedata` before
+   implementing). ZWNJ/ZWJ were simultaneously exempted from *both*
+   reorder rules (their meaning is position-sensitive — moving them was a
+   latent bug in the original rule).
+2. **ZWSP as a trusted boundary** (`core/src/trie.rs`): `U+200B` — the
+   Unicode-recommended Khmer word-boundary marker — is now consumed as a
+   separator instead of leaking through as a stray standalone token. The
+   CLI gained `--zwsp` to emit it back out.
+
+Measured effect, per the no-silent-changes rule:
+
+- **khPOS OPEN-TEST: every row above reproduces byte-for-byte** (verified
+  by a full re-run) — khPOS isn't NFC-processed (0/1,000 lines altered by
+  NFC), contains zero ZWJ/ZWNJ, and the eval reconstructs inputs from gold
+  tokens (no ZWSP), so nothing there exercises the new paths. Same for
+  kh_data_10000b's rows. Zero regression, zero flattering delta to report.
+- The ZWSP change is a **raw-input correctness fix, not an eval-metric
+  one**: kh_data_10000b's 10,000 raw articles contain **1,303,740 ZWSP
+  characters (avg 130/document)**, every one of which the previous
+  behavior emitted as a stray invisible token (and glued into adjacent
+  non-Khmer tokens). Anyone feeding real Khmer web text through the CLI
+  was getting ~130 garbage tokens per article; now each one is consumed as
+  the word boundary it's defined to be.
+- The NFC rule's value is likewise defensive: it only fires on
+  NFC-processed input, which neither eval corpus is — but which most
+  Python/scraping pipelines produce. Both rules carry the same
+  measured-zero, defense-in-depth status as Phase 5's original rule, now
+  with the failure mode documented as *provable* (TN61) rather than
+  hypothetical.

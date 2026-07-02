@@ -240,6 +240,30 @@ dictionaries (`from_words`/`from_dict_str`) or words chamkho missed.
 default tokenizer's F1 on the committed sample drops below 0.9, with no
 dependency on network access or an ungated third-party corpus.
 
+## Beyond Phase 6 — informed by RESEARCH-3 (2026-07-02 landscape survey)
+
+[RESEARCH-3.md](./RESEARCH-3.md) surveyed the current Khmer-segmentation
+landscape with adversarially-verified sourcing. Two of its findings were
+implemented immediately (the NFC/CCC normalizer rule and ZWSP boundary
+handling — see the survey's §2 and `BENCHMARKS.md`); the rest shape what
+comes next:
+
+- [ ] **Statistical BMES tagger tier (CRF or averaged perceptron).** The
+      popular Khmer tools (khmercut, khmer-nltk) are CRF-based — the tier
+      between this project's dictionary-DP and neural SOTA. Phase 4's BMES
+      training infrastructure (`eval/src/hmm.rs`) is the substrate; a
+      feature-richer tagger trained the same local-only way would close
+      part of the accuracy gap without abandoning the zero-dependency
+      posture. Same NC-license constraint: no trained model ships.
+- [ ] **Python (PyO3) and WASM bindings.** The verified downstream finding
+      (word segmentation before Khmer LLM/NLG pretraining measurably helps)
+      is only actionable from Python pipelines. Raises the priority of the
+      long-standing README roadmap item.
+- [ ] **Explicit non-goal:** chasing neural-SOTA accuracy (UnifiedCut:
+      F1 0.985 on khPOS — but OOV recall still only 0.613) inside this
+      crate. Users needing that should use a neural tool; this crate's
+      niche is deterministic, model-free, dependency-free segmentation.
+
 ---
 
 ## Proposed layout after this phase

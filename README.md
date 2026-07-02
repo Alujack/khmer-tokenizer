@@ -20,13 +20,17 @@ output:  ["សួស្តី", "អ្នក", "ទាំងអស់គ្ន�
 Segmentation runs in three passes:
 
 0. **Normalization pass (on by default)** — [`normalize`](core/src/normalize.rs)
-   reorders a shifter, vowel, or sign that was typed directly before a
-   `COENG`+consonant subscript pair to instead follow it, per the Unicode
-   Khmer syllable structure — the single most common real-world Khmer
-   encoding error (e.g. `សិទិ្ធ` for the correct `សិទ្ធិ`). Pure character
-   reordering, so it's byte-length-preserving. Opt out with
-   `.without_normalization()` — see [BENCHMARKS.md](docs/BENCHMARKS.md) for
-   why it's kept on by default even though its measured effect on the
+   repairs two real-world corruptions of the Unicode Khmer syllable
+   structure: a shifter, vowel, or sign typed directly *before* a
+   `COENG`+consonant subscript pair (the most common typing error, e.g.
+   `សិទិ្ធ` for the correct `សិទ្ធិ`), and a mark stranded *between*
+   `COENG` and its consonant — which is what Unicode NFC itself produces
+   on Khmer text, thanks to erroneous-and-frozen canonical combining
+   classes (see [RESEARCH-3.md](docs/RESEARCH-3.md) §2a), so any
+   NFC-processing pipeline upstream of you silently corrupts Khmer this
+   way. Pure character reordering, so it's byte-length-preserving. Opt out
+   with `.without_normalization()` — see [BENCHMARKS.md](docs/BENCHMARKS.md)
+   for why it's kept on by default even though its measured effect on the
    bundled dictionary is zero.
 1. **Cluster pass** — the text is grouped into *Khmer Character Clusters* (KCC):
    a base consonant or independent vowel together with any stacked subscripts
@@ -52,6 +56,10 @@ Segmentation runs in three passes:
 
    Either way, runs of non-Khmer text (Latin, digits, punctuation) become
    their own tokens, and whitespace separates tokens without producing one.
+   So does `U+200B` ZERO WIDTH SPACE — the character the Unicode Standard
+   recommends for marking Khmer word boundaries, ubiquitous as an invisible
+   hint in real Khmer web text. Each ZWSP is trusted as an authoritative
+   boundary: consumed, never emitted as a token, never merged across.
 3. **OOV fallback (optional)** — every strategy above still falls back to one
    token per cluster when a run matches *nothing* in the dictionary at all.
    Attaching an [`HmmModel`](core/src/hmm.rs) via `with_hmm(...)` replaces
@@ -137,6 +145,11 @@ cargo build --release
 # Bidirectional max-match instead of the default forward max-match
 ./target/release/khmer-tokenizer --strategy bimm "សួស្តីអ្នកទាំងអស់គ្នា"
 
+# Join tokens with U+200B ZERO WIDTH SPACE — the Unicode-recommended Khmer
+# word-boundary marker. Renders identically to the input, round-trips
+# through the tokenizer, and is what SentencePiece-style trainers can eat.
+./target/release/khmer-tokenizer --zwsp "សួស្តីអ្នកទាំងអស់គ្នា"
+
 # Read from stdin, one line at a time
 echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | ./target/release/khmer-tokenizer
 ```
@@ -168,8 +181,9 @@ To use your own lexicon instead:
 cargo test
 ```
 
-Covers orthographic normalization (reordering marks typed before a subscript,
-idempotency, byte-length preservation — see `core/src/normalize.rs`), KCC
+Covers orthographic normalization (marks typed before a subscript, the
+NFC-stranded-mark repair, joiner exemptions, idempotency, byte-length
+preservation — see `core/src/normalize.rs`), ZWSP boundary handling, KCC
 splitting (subscripts and vowels stay attached), all three segmentation
 strategies (forward max-match, bidirectional max-match, and unigram DP —
 including a hand-built case where only DP-based scoring can reach the

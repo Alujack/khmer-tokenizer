@@ -5,11 +5,16 @@
 //! echo "សួស្តីអ្នក" | khmer-tokenizer        # segment stdin
 //! khmer-tokenizer --json "ភាសាខ្មែរ"         # JSON array per line
 //! khmer-tokenizer --strategy bimm "..."     # bidirectional max-match
+//! khmer-tokenizer --zwsp "..."              # U+200B-delimited output
 //! ```
 //!
-//! Output is space-separated tokens by default, or a JSON array with `--json`.
-//! Input is read from the command-line arguments, or from stdin when no text
-//! argument is given. Each input line is segmented independently.
+//! Output is space-separated tokens by default, a JSON array with `--json`,
+//! or tokens joined with `U+200B` ZERO WIDTH SPACE with `--zwsp` — the
+//! delimiter the Unicode Standard recommends for marking Khmer word
+//! boundaries, giving output that renders identically to the input while
+//! carrying machine-readable boundaries. Input is read from the
+//! command-line arguments, or from stdin when no text argument is given.
+//! Each input line is segmented independently.
 
 use std::io::{self, Read, Write};
 
@@ -17,6 +22,7 @@ use khmer_tokenizer_core::{KhmerTokenizer, Strategy};
 
 fn main() {
     let mut json = false;
+    let mut zwsp = false;
     let mut strategy = Strategy::ForwardMaxMatch;
     let mut text_args: Vec<String> = Vec::new();
 
@@ -25,6 +31,7 @@ fn main() {
     while i < args.len() {
         match args[i].as_str() {
             "--json" | "-j" => json = true,
+            "--zwsp" | "-z" => zwsp = true,
             "--help" | "-h" => {
                 print_help();
                 return;
@@ -70,6 +77,8 @@ fn main() {
         let rendered = if json {
             let items: Vec<String> = tokens.iter().map(|t| json_escape(t)).collect();
             format!("[{}]", items.join(","))
+        } else if zwsp {
+            tokens.join("\u{200B}")
         } else {
             tokens.join(" ")
         };
@@ -102,6 +111,8 @@ fn print_help() {
     println!("  echo TEXT | khmer-tokenizer [OPTIONS]\n");
     println!("OPTIONS:");
     println!("  -j, --json             Output a JSON array of tokens per line");
+    println!("  -z, --zwsp             Join tokens with U+200B ZERO WIDTH SPACE (the");
+    println!("                         Unicode-recommended Khmer word-boundary marker)");
     println!("  -s, --strategy <NAME>  Segmentation strategy: fmm (default) or bimm");
     println!("  -h, --help             Show this help and exit");
 }

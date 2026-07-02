@@ -1,6 +1,8 @@
 # khmer-tokenizer
 
 [![CI](https://github.com/Alujack/khmer-tokenizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Alujack/khmer-tokenizer/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/khmer-tokenizer-core.svg)](https://crates.io/crates/khmer-tokenizer-core)
+[![docs.rs](https://img.shields.io/docsrs/khmer-tokenizer-core)](https://docs.rs/khmer-tokenizer-core)
 
 A fast, dependency-free **Khmer word segmenter** written in Rust.
 
@@ -14,6 +16,18 @@ and quickly, with no external dependencies.
 input:   សួស្តីអ្នកទាំងអស់គ្នា
 output:  ["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]
 ```
+
+## Install
+
+```bash
+# The library, in your Rust project
+cargo add khmer-tokenizer-core
+
+# The command-line tool
+cargo install khmer-tokenizer-cli   # installs the `khmer-tokenizer` binary
+```
+
+API docs: [docs.rs/khmer-tokenizer-core](https://docs.rs/khmer-tokenizer-core)
 
 ## How it works
 
@@ -131,27 +145,27 @@ assert_eq!(split_kcc("ខ្មែរ"), vec!["ខ្មែ", "រ"]);
 ## CLI usage
 
 ```bash
-# Build
-cargo build --release
+# Install from crates.io (or build from source with `cargo build --release`)
+cargo install khmer-tokenizer-cli
 
 # Segment an argument (space-separated output)
-./target/release/khmer-tokenizer "សួស្តីអ្នកទាំងអស់គ្នា"
+khmer-tokenizer "សួស្តីអ្នកទាំងអស់គ្នា"
 # -> សួស្តី អ្នក ទាំងអស់គ្នា
 
 # JSON array output
-./target/release/khmer-tokenizer --json "ភាសាខ្មែរ"
+khmer-tokenizer --json "ភាសាខ្មែរ"
 # -> ["ភាសា","ខ្មែរ"]
 
 # Bidirectional max-match instead of the default forward max-match
-./target/release/khmer-tokenizer --strategy bimm "សួស្តីអ្នកទាំងអស់គ្នា"
+khmer-tokenizer --strategy bimm "សួស្តីអ្នកទាំងអស់គ្នា"
 
 # Join tokens with U+200B ZERO WIDTH SPACE — the Unicode-recommended Khmer
 # word-boundary marker. Renders identically to the input, round-trips
 # through the tokenizer, and is what SentencePiece-style trainers can eat.
-./target/release/khmer-tokenizer --zwsp "សួស្តីអ្នកទាំងអស់គ្នា"
+khmer-tokenizer --zwsp "សួស្តីអ្នកទាំងអស់គ្នា"
 
 # Read from stdin, one line at a time
-echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | ./target/release/khmer-tokenizer
+echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | khmer-tokenizer
 ```
 
 ## Dictionary

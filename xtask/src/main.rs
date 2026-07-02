@@ -4,6 +4,7 @@
 //! cargo xtask eval             # download khPOS, run the eval harness, print P/R/F1
 //! cargo xtask eval-kh10000b    # run against the local (manually-placed) kh_data_10000b corpus
 //! cargo xtask prepare-dict     # rebuild core/src/dict.txt from chamkho's khmerdict.txt
+//! cargo xtask train-tagger OUT # train a TaggerModel from khPOS, write it to OUT (local-only)
 //! ```
 
 mod dict;
@@ -18,10 +19,12 @@ use khmer_tokenizer_eval::corpus::{self, Split};
 use khmer_tokenizer_eval::{count_frequencies, evaluate, kh10000b, train_hmm, train_tagger};
 
 fn main() {
-    match std::env::args().nth(1).as_deref() {
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
         Some("eval") => run_eval(),
         Some("eval-kh10000b") => run_eval_kh10000b(),
         Some("prepare-dict") => run_prepare_dict(),
+        Some("train-tagger") => run_train_tagger(args.next()),
         _ => print_usage(),
     }
 }
@@ -29,9 +32,10 @@ fn main() {
 fn print_usage() {
     eprintln!("USAGE: cargo xtask <COMMAND>\n");
     eprintln!("COMMANDS:");
-    eprintln!("  eval             Download khPOS and print P/R/F1 for the current tokenizer");
-    eprintln!("  eval-kh10000b    Evaluate against the local kh_data_10000b corpus (silver reference)");
-    eprintln!("  prepare-dict     Rebuild core/src/dict.txt from chamkho's khmerdict.txt");
+    eprintln!("  eval               Download khPOS and print P/R/F1 for the current tokenizer");
+    eprintln!("  eval-kh10000b      Evaluate against the local kh_data_10000b corpus (silver reference)");
+    eprintln!("  prepare-dict       Rebuild core/src/dict.txt from chamkho's khmerdict.txt");
+    eprintln!("  train-tagger OUT   Train a TaggerModel from khPOS and write it to OUT (local-only)");
 }
 
 fn run_eval() {
@@ -226,6 +230,51 @@ fn run_eval_kh10000b() {
         .without_normalization();
     let metrics = evaluate(&result.examples, &tokenizer);
     report::print_table("Tagger full (khPOS-trained, CROSS-corpus)", &metrics);
+}
+
+/// Train an averaged-perceptron `TaggerModel` from khPOS's train split and
+/// write it (via `to_text`) to `out_path`, for use with the CLI's
+/// `--tagger` flag or `KhmerTokenizer::with_tagger`.
+///
+/// **Local-only, by design.** khPOS is CC BY-NC-SA, so the resulting model
+/// is a derived work under the same non-commercial terms — this is how a
+/// caller produces a model *from a corpus they're licensed to use*, exactly
+/// like the in-memory training the eval harness already does. The output is
+/// never committed (write it under `data/`, which is gitignored, or
+/// anywhere outside the repo).
+fn run_train_tagger(out_path: Option<String>) {
+    let Some(out_path) = out_path else {
+        eprintln!("error: train-tagger requires an output path, e.g. `cargo xtask train-tagger data/tagger.txt`");
+        std::process::exit(1);
+    };
+
+    let repo_dir = download::ensure_khpos(Path::new("data")).unwrap_or_else(|e| {
+        eprintln!("error: could not fetch khPOS corpus: {e}");
+        std::process::exit(1);
+    });
+    let train_examples = corpus::load_khpos_dir(&repo_dir, Split::Train).unwrap_or_else(|e| {
+        eprintln!("error: could not read khPOS train split: {e}");
+        std::process::exit(1);
+    });
+
+    let model = train_tagger(&train_examples, 5);
+    let text = model.to_text();
+    fs::write(&out_path, &text).unwrap_or_else(|e| {
+        eprintln!("error: could not write {out_path}: {e}");
+        std::process::exit(1);
+    });
+
+    println!(
+        "trained tagger on {} khPOS sentences ({} features); wrote {} ({} bytes).",
+        train_examples.len(),
+        model.feature_count(),
+        out_path,
+        text.len(),
+    );
+    println!(
+        "NOTE: this model is derived from khPOS (CC BY-NC-SA) -- non-commercial, \
+         never commit it. Use with `khmer-tokenizer --strategy tagger --tagger {out_path}`."
+    );
 }
 
 fn run_prepare_dict() {

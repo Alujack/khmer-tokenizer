@@ -202,6 +202,17 @@ khmer-tokenizer --json "ភាសាខ្មែរ"
 # Bidirectional max-match instead of the default forward max-match
 khmer-tokenizer --strategy bimm "សួស្តីអ្នកទាំងអស់គ្នា"
 
+# The stronger tiers, with the data they need (none ships — see "Dictionary"):
+#   a custom dictionary...
+khmer-tokenizer --dict words.txt "ភាសាខ្មែរ"
+#   ...unigram DP with a frequency table (word<TAB>count per line)...
+khmer-tokenizer --strategy unigram --freq freqs.txt "ភាសាខ្មែរ"
+#   ...or the CRF-class tagger with a trained model (produce one locally
+#   from a corpus you're licensed to use: `cargo xtask train-tagger model.txt`).
+khmer-tokenizer --strategy tagger --tagger model.txt "សួស្តីអ្នក"
+# A --tagger model given with a dictionary strategy is used as the
+# out-of-vocabulary fallback instead of as the whole segmenter.
+
 # Join tokens with U+200B ZERO WIDTH SPACE — the Unicode-recommended Khmer
 # word-boundary marker. Renders identically to the input, round-trips
 # through the tokenizer, and is what SentencePiece-style trainers can eat.
@@ -319,10 +330,11 @@ Designed so these slot in without restructuring the workspace:
   bundleable corpus-frequency source has been found yet (see
   [docs/ROADMAP.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/ROADMAP.md) Phase 3); until then, callers supply
   their own via `with_frequencies(...)`.
-- **CLI support for `UnigramDp`, `with_hmm`, and `Strategy::Tagger`** — the
-  CLI has no mechanism yet to load an external frequency table or model
-  file (the tagger's `to_text` format is designed for exactly this), so
-  `--strategy` only exposes `fmm`/`bimm`.
+- **CLI support for `with_hmm`** — the CLI can now load a dictionary
+  (`--dict`), a frequency table (`--freq` for `unigram`), and a tagger
+  model (`--tagger` for `tagger` or as an OOV fallback), but there's no
+  flag to load an `HmmModel` yet, because `HmmModel` has no text
+  (de)serializer — only `TaggerModel` does. Adding one would close this.
 
 ## License
 

@@ -83,9 +83,10 @@ committed sample (Phase 6), so none of the above can silently rot.
 
 - [x] Introduce a `Strategy` enum (`core/src/strategy.rs`): `ForwardMaxMatch`
       (default, stays deterministic), `BiMaxMatch`, `UnigramDp`. Selected via
-      `KhmerTokenizer::with_strategy(...)`; FMM/BiMM also exposed as `cli
-      --strategy fmm|bimm` (`UnigramDp` isn't, since the CLI has no mechanism
-      yet to load an external frequency file — see the note below).
+      `KhmerTokenizer::with_strategy(...)`; all four (FMM/BiMM/UnigramDp/
+      Tagger) are now exposed as `cli --strategy fmm|bimm|unigram|tagger`,
+      with `--dict`/`--freq`/`--tagger` flags to load the data the stronger
+      tiers need (2026-07-02).
 - [x] Implement **bidirectional max-match** (`core/src/trie.rs`: `rev_root` +
       `backward_match` + `bimm`) as a cheap intermediate — forward + backward
       over the same cluster run; on disagreement, fewer tokens wins, then

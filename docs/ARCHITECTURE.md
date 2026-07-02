@@ -131,9 +131,10 @@ pub enum Strategy {
 
 A user who writes `tokenizer.segment(text)` doesn't need to change anything
 when switching strategies — `KhmerTokenizer::with_strategy(Strategy::BiMaxMatch)`
-chains onto any constructor, and the CLI exposes FMM/BiMM the same way via
-`--strategy fmm|bimm` (`UnigramDp` isn't CLI-exposed yet — no flag to load an
-external frequency file).
+chains onto any constructor, and the CLI exposes all four strategies the
+same way via `--strategy fmm|bimm|unigram|tagger`, with `--dict`, `--freq`,
+and `--tagger` flags to load the data the stronger tiers require (a model
+file is produced locally by `cargo xtask train-tagger`).
 
 `UnigramDp`'s DAG-plus-DP approach is a real algorithmic step up from the
 other two, not just a variant: `greedy_match` (used by both FMM and BiMM)

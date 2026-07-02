@@ -1,0 +1,31 @@
+name: CI
+
+# The regression guard (docs/ROADMAP.md Phase 6) lives inside `cargo test`
+# (eval/tests/regression.rs, against a small hand-authored, committed,
+# license-safe fixture) rather than as a separate step here, specifically so
+# CI never depends on network access to clone khPOS (gitignored, CC BY-NC-SA
+# — see docs/RESEARCH.md §3). `cargo xtask eval`'s numbers against the real
+# corpus are recorded by hand in docs/BENCHMARKS.md when a phase lands, not
+# run in CI.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Build, test, lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Build workspace
+        run: cargo build --workspace --verbose
+      - name: Test workspace (includes the Phase 6 regression guard)
+        run: cargo test --workspace --verbose
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

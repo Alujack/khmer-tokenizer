@@ -35,6 +35,7 @@ model training later.
 | Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | ✅ built (FMM, BiMM, UnigramDp — see below) |
 | HMM OOV fallback | `core/src/hmm.rs`      | guess boundaries where the dictionary matched nothing at all | ✅ built (Phase 4 — see below) |
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
+| Regression guard | `eval/tests/regression.rs` + CI | fail the build if accuracy silently rots | ✅ built (Phase 6 — see below) |
 | Model (optional) | `model/` (feature-gated) | trained CRF / neural segmenter               | 🔭 future  |
 | Bindings         | `wasm/`, `py/`         | run from JS/browser and Python               | 🔭 future  |
 
@@ -177,6 +178,29 @@ Same posture as `UnigramDp`'s frequencies: no trained `HmmModel` ships with
 the crate (see `ATTRIBUTION.md`) — callers build one with
 `HmmModel::from_counts(...)` from a segmented corpus they're licensed to
 use.
+
+## The regression guard (built, Phase 6)
+
+Every prior phase measured its effect against khPOS — but khPOS is
+gitignored (CC BY-NC-SA, download-only, never committed — see
+`ATTRIBUTION.md`) and needs a network clone, so it can't be the thing that
+gates every commit in CI. `eval/tests/regression.rs` solves that with a
+different, deliberately smaller corpus: `eval/tests/fixtures/regression.word`,
+15 sentences written for this project (not derived from khPOS or anywhere
+else), so it's freely committable. It runs as an ordinary `cargo test`
+integration test — no `cargo xtask`, no network — and fails if
+`KhmerTokenizer::with_default_dict()`'s F1 on that fixture drops below 0.9.
+`.github/workflows/ci.yml` runs `cargo test` (this guard included) plus
+`cargo clippy -- -D warnings` on every push and PR.
+
+This is intentionally a *floor*, not a pin to today's exact numbers: a
+legitimate future change (swapping the default strategy, regenerating
+`dict.txt` with different coverage) should be free to move the score around
+without tripping CI, while an actual regression (a corrupted dictionary, a
+broken trie walk, a regressed normalizer) still gets caught immediately
+instead of silently shipping. One fixture line is deliberately a real-world
+malformed Khmer spelling (`សិទិ្ធមនុស្ស`), so Phase 5's normalization fix
+specifically stays covered too.
 
 ## The data flywheel (how massive data plugs in)
 

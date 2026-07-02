@@ -1,5 +1,7 @@
 # khmer-tokenizer
 
+[![CI](https://github.com/Alujack/khmer-tokenizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Alujack/khmer-tokenizer/actions/workflows/ci.yml)
+
 A fast, dependency-free **Khmer word segmenter** written in Rust.
 
 Written Khmer has no spaces between words, so before you can search, index,
@@ -174,7 +176,10 @@ including a hand-built case where only DP-based scoring can reach the
 correct segmentation), the HMM OOV fallback (a hand-built BMES model that
 resegments an unmatched cluster run while leaving a real dictionary hit
 alone), mixed Khmer/Latin/number input, the out-of-vocabulary fallback, and
-dictionary loading.
+dictionary loading — plus a CI regression guard
+(`eval/tests/regression.rs`) that fails the build if the default
+tokenizer's accuracy on a small, committed, hand-authored sample drops
+below a floor. [CI](.github/workflows/ci.yml) runs this on every push/PR.
 
 ## Roadmap
 
@@ -192,9 +197,6 @@ Designed so these slot in without restructuring the workspace:
 - **CLI support for `UnigramDp` and `with_hmm`** — the CLI has no mechanism
   yet to load an external frequency table or HMM model file, so
   `--strategy` only exposes `fmm`/`bimm`.
-- **A CI regression guard** (Phase 6) — run `cargo test` plus the eval
-  harness against a small, license-safe synthetic sample on every change,
-  and fail if F1 drops below a threshold.
 
 ## License
 

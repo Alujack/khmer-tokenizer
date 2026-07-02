@@ -18,7 +18,9 @@ Orthographic normalization (Phase 5, done) is on by default via
 `core/src/normalize.rs`; measured effect on the bundled dictionary is exactly
 zero (root cause understood and documented — see `docs/BENCHMARKS.md`), but
 it's kept on as defense in depth for dictionaries/words that dictionary
-doesn't already special-case.
+doesn't already special-case. All 6 phases below are now done: `cargo test`
+(and CI, `.github/workflows/ci.yml`) enforces a regression floor on a small
+committed sample (Phase 6), so none of the above can silently rot.
 
 ---
 
@@ -199,14 +201,44 @@ depth — the dictionary's duplicate-entry workaround only covers the specific
 words chamkho's maintainers happened to special-case, not custom
 dictionaries (`from_words`/`from_dict_str`) or words chamkho missed.
 
-## Phase 6 — Regression guard
+## Phase 6 — Regression guard ✅
 
 **Goal:** accuracy can't silently rot.
 
-- [ ] CI job runs `cargo test` + the eval harness on a small committed *synthetic*
-      sample (license-safe) and fails if F1 drops below a threshold.
-- [ ] Keep `docs/BENCHMARKS.md` as the running record of metric numbers per
-      change.
+- [x] Added `eval/tests/regression.rs`, a `cargo test` integration test —
+      not a separate `cargo xtask` command — specifically so the guard needs
+      no network access. It runs `KhmerTokenizer::with_default_dict()`
+      against `eval/tests/fixtures/regression.word`: 15 hand-authored,
+      original sentences (not derived from khPOS or any other corpus, so
+      it's freely committable, unlike the gitignored CC BY-NC-SA khPOS
+      data). Every word was confirmed present in `core/src/dict.txt` before
+      being included, and one line (`សិទិ្ធមនុស្ស`) is a real-world
+      malformed spelling on purpose, guarding Phase 5's normalization pass
+      specifically. Measured F1 today is exactly 1.0; the assertion floor is
+      set at 0.9 — enough headroom that a legitimate future change (a
+      different default strategy, a regenerated `dict.txt` with different
+      coverage) won't trip it on noise, while a real break (corrupted
+      dictionary, broken trie walk, regressed normalizer) still would.
+- [x] Added `.github/workflows/ci.yml`: runs `cargo build --workspace`,
+      `cargo test --workspace` (which includes the regression guard above),
+      and `cargo clippy --workspace --all-targets -- -D warnings` on every
+      push/PR to `master`. Deliberately does **not** run `cargo xtask eval`
+      in CI — that needs network access to clone khPOS, and its real-corpus
+      numbers are already the ones tracked by hand in `BENCHMARKS.md` per
+      phase (this is exactly why Phase 6 asked for a *committed synthetic*
+      sample rather than gating on khPOS directly). `cargo fmt --check` was
+      considered but left out of the gate: this session found it already
+      disagrees with itself on pre-existing Khmer-string-heavy code across
+      rustfmt versions (line-width calculation for wide Khmer text differs
+      across versions), which would make CI flaky for reasons unrelated to
+      actual code health.
+- [x] `docs/BENCHMARKS.md` has been the running record of every phase's
+      metrics since Phase 1 and continues to be — no change needed here
+      beyond continuing the existing practice.
+
+*Exit criteria:* Met — `cargo test` (and therefore CI) now fails if the
+default tokenizer's F1 on the committed sample drops below 0.9, with no
+dependency on network access or an ungated third-party corpus.
 
 ---
 

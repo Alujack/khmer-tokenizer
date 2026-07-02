@@ -3,7 +3,7 @@
 //! khPOS is CC BY-NC-SA 4.0 — evaluation-only, never bundled or committed
 //! (see `docs/RESEARCH.md` §3 and `docs/RESEARCH-2.md` §5). chamkho's
 //! `khmerdict.txt` is MIT-licensed and *is* the source of the bundled
-//! dictionary (see `ATTRIBUTION.md`) — only the derived, cleaned
+//! dictionary (see `core/ATTRIBUTION.md`) — only the derived, cleaned
 //! `core/src/dict.txt` is committed, not this raw checkout.
 
 use std::io;

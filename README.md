@@ -19,17 +19,17 @@ output:  ["សួស្តី", "អ្នក", "ទាំងអស់គ្ន�
 
 Segmentation runs in three passes:
 
-0. **Normalization pass (on by default)** — [`normalize`](core/src/normalize.rs)
+0. **Normalization pass (on by default)** — [`normalize`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/normalize.rs)
    repairs two real-world corruptions of the Unicode Khmer syllable
    structure: a shifter, vowel, or sign typed directly *before* a
    `COENG`+consonant subscript pair (the most common typing error, e.g.
    `សិទិ្ធ` for the correct `សិទ្ធិ`), and a mark stranded *between*
    `COENG` and its consonant — which is what Unicode NFC itself produces
    on Khmer text, thanks to erroneous-and-frozen canonical combining
-   classes (see [RESEARCH-3.md](docs/RESEARCH-3.md) §2a), so any
+   classes (see [RESEARCH-3.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/RESEARCH-3.md) §2a), so any
    NFC-processing pipeline upstream of you silently corrupts Khmer this
    way. Pure character reordering, so it's byte-length-preserving. Opt out
-   with `.without_normalization()` — see [BENCHMARKS.md](docs/BENCHMARKS.md)
+   with `.without_normalization()` — see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)
    for why it's kept on by default even though its measured effect on the
    bundled dictionary is zero.
 1. **Cluster pass** — the text is grouped into *Khmer Character Clusters* (KCC):
@@ -39,7 +39,7 @@ Segmentation runs in three passes:
    splits *inside* an orthographic syllable — the classic bug in naive Khmer
    tokenizers.
 2. **Boundary pass** — a trie keyed on whole clusters is walked to place word
-   boundaries, using one of three [`Strategy`](core/src/strategy.rs) algorithms:
+   boundaries, using one of three [`Strategy`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/strategy.rs) algorithms:
    - `ForwardMaxMatch` (default) — greedy longest-match, left to right: at
      each position, consume the longest run of clusters that forms a
      dictionary word. Falls back to a single cluster when nothing matches.
@@ -49,7 +49,7 @@ Segmentation runs in three passes:
    - `UnigramDp` — builds a DAG of every dictionary match (not just the
      longest) and dynamic-programs the highest-probability path using word
      frequencies you supply via `with_frequencies(...)`. The most accurate of
-     the three by a clear margin — see [BENCHMARKS.md](docs/BENCHMARKS.md) —
+     the three by a clear margin — see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md) —
      but needs a frequency table; **none ships with this crate** (see
      "Dictionary" below for why). Falls back to `ForwardMaxMatch` if none is
      set.
@@ -62,12 +62,12 @@ Segmentation runs in three passes:
    boundary: consumed, never emitted as a token, never merged across.
 3. **OOV fallback (optional)** — every strategy above still falls back to one
    token per cluster when a run matches *nothing* in the dictionary at all.
-   Attaching an [`HmmModel`](core/src/hmm.rs) via `with_hmm(...)` replaces
+   Attaching an [`HmmModel`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/hmm.rs) via `with_hmm(...)` replaces
    just those unmatched runs with a Viterbi-decoded BMES guess instead,
    leaving every dictionary hit (including real single-cluster words)
    untouched — lifts out-of-vocabulary recall by ~0.05 absolute with no
    measured cost to in-vocabulary accuracy (see
-   [BENCHMARKS.md](docs/BENCHMARKS.md)). Needs a model you train yourself;
+   [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)). Needs a model you train yourself;
    none ships with this crate (same reason as `UnigramDp`'s frequencies).
 
 The engine is `std`-only and deterministic. No model, no training step, no
@@ -159,7 +159,7 @@ echo "ខ្ញុំស្រឡាញ់កម្ពុជា" | ./target/rele
 Segmentation quality is bounded by the dictionary. The bundled
 `core/src/dict.txt` has **59,526 words**, sourced from
 [chamkho](https://github.com/veer66/chamkho)'s `khmerdict.txt`
-(MIT license, copyright SIL NRSI — see [ATTRIBUTION.md](./ATTRIBUTION.md)).
+(MIT license, copyright SIL NRSI — see [ATTRIBUTION.md](https://github.com/Alujack/khmer-tokenizer/blob/master/core/ATTRIBUTION.md)).
 It's regenerated with `cargo xtask prepare-dict`, which re-downloads and
 re-cleans the source rather than hand-editing the committed file.
 
@@ -193,7 +193,7 @@ alone), mixed Khmer/Latin/number input, the out-of-vocabulary fallback, and
 dictionary loading — plus a CI regression guard
 (`eval/tests/regression.rs`) that fails the build if the default
 tokenizer's accuracy on a small, committed, hand-authored sample drops
-below a floor. [CI](.github/workflows/ci.yml) runs this on every push/PR.
+below a floor. [CI](https://github.com/Alujack/khmer-tokenizer/blob/master/.github/workflows/ci.yml) runs this on every push/PR.
 
 ## Roadmap
 
@@ -206,7 +206,7 @@ Designed so these slot in without restructuring the workspace:
 - **Benchmarks** — a Criterion suite to track throughput.
 - **A bundleable frequency table** for `UnigramDp` — no commercially-clean,
   bundleable corpus-frequency source has been found yet (see
-  [docs/ROADMAP.md](docs/ROADMAP.md) Phase 3); until then, callers supply
+  [docs/ROADMAP.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/ROADMAP.md) Phase 3); until then, callers supply
   their own via `with_frequencies(...)`.
 - **CLI support for `UnigramDp` and `with_hmm`** — the CLI has no mechanism
   yet to load an external frequency table or HMM model file, so
@@ -214,5 +214,5 @@ Designed so these slot in without restructuring the workspace:
 
 ## License
 
-Dual-licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT license](LICENSE-MIT) at your option.
+Dual-licensed under either of [Apache License, Version 2.0](https://github.com/Alujack/khmer-tokenizer/blob/master/LICENSE-APACHE) or
+[MIT license](https://github.com/Alujack/khmer-tokenizer/blob/master/LICENSE-MIT) at your option.

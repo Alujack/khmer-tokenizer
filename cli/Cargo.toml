@@ -1,6 +1,9 @@
 [package]
 name = "khmer-tokenizer-cli"
-description = "Command-line interface for the Khmer tokenizer."
+description = "Command-line Khmer word segmenter (installs the `khmer-tokenizer` binary)."
+keywords = ["khmer", "nlp", "tokenizer", "segmentation", "cli"]
+categories = ["text-processing", "command-line-utilities"]
+readme = "../README.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,4 +15,6 @@ name = "khmer-tokenizer"
 path = "src/main.rs"
 
 [dependencies]
-khmer-tokenizer-core = { path = "../core" }
+# `version` is required for crates.io publishing; `path` keeps local builds
+# using the workspace copy.
+khmer-tokenizer-core = { path = "../core", version = "0.1.0" }

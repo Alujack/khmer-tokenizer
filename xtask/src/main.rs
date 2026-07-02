@@ -63,7 +63,7 @@ fn run_eval() {
 
     // UnigramDp needs frequencies. khPOS is CC BY-NC-SA, so these are
     // computed here for local evaluation only — never bundled or shipped
-    // (see ATTRIBUTION.md and docs/ROADMAP.md Phase 3). Split::Train is
+    // (see core/ATTRIBUTION.md and docs/ROADMAP.md Phase 3). Split::Train is
     // confirmed disjoint from OpenTest, so this doesn't leak the eval set.
     let train_examples = corpus::load_khpos_dir(&repo_dir, Split::Train).unwrap_or_else(|e| {
         eprintln!("error: could not read khPOS train split: {e}");

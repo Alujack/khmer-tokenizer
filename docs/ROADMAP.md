@@ -57,7 +57,7 @@ committed sample (Phase 6), so none of the above can silently rot.
       [chamkho](https://github.com/veer66/chamkho)'s `khmerdict.txt` instead:
       59,526 words, ungated, plain text, its own standalone MIT license file
       (`LICENSE-khmerdict`, copyright SIL NRSI). Documented in
-      `ATTRIBUTION.md`, including why khmer-lexicon was passed over.
+      `core/ATTRIBUTION.md`, including why khmer-lexicon was passed over.
 - [ ] ~~Add a frequency table from silnrsi/khmerlbdict / SEALang~~ — **deferred
       to Phase 3.** Inspected `khmerlbdict` directly: its `LICENSE` (MIT) only
       covers the tooling: the wordlist data itself is compiled from SEALang,
@@ -141,7 +141,7 @@ predicted.
       word (Single for 1 cluster, Begin/Middle*/End for 2+), counted across
       khPOS's `before-replace/train6.word` split — same CC BY-NC-SA,
       local-eval-only constraint already established for `UnigramDp`'s
-      frequencies (see `ATTRIBUTION.md`). No derived model ships with the
+      frequencies (see `core/ATTRIBUTION.md`). No derived model ships with the
       crate; `with_hmm` requires the caller to supply one, exactly like
       `with_frequencies`.
 - [x] Re-measured R-oov (`docs/BENCHMARKS.md`): **0.3505 → 0.4020** on top of

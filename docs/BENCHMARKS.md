@@ -75,7 +75,7 @@ A small, real win, as expected for the "cheap intermediate" step:
 Frequency source: word counts from khPOS's `before-replace/train6.word` split
 (12,000 sentences, CC BY-NC-SA 4.0). **Computed and used locally by
 `cargo xtask eval` only — never bundled, committed, or shipped** (see
-`docs/ROADMAP.md` Phase 3 and `ATTRIBUTION.md`). Before trusting this as a
+`docs/ROADMAP.md` Phase 3 and `core/ATTRIBUTION.md`). Before trusting this as a
 fair comparison, confirmed by exact-line overlap that this training split is
 effectively disjoint from `OPEN-TEST` (11/1000 incidental matches — the eval
 set this table scores against) — it is, however, **100% contained in
@@ -108,7 +108,7 @@ clear margin.
 
 Training data: BMES tag counts gathered from khPOS's `before-replace/train6.word`
 split (same split, same disjointness/leakage caveat as `UnigramDp`'s
-frequencies above — see `docs/ROADMAP.md` Phase 4 and `ATTRIBUTION.md`).
+frequencies above — see `docs/ROADMAP.md` Phase 4 and `core/ATTRIBUTION.md`).
 `with_hmm(...)` composes with any `Strategy`; it only re-segments maximal runs
 of clusters that strategy matched *nothing* in the dictionary for at all —
 every genuine dictionary hit (including real single-cluster words) is passed

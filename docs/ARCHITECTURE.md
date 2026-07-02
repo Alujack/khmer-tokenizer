@@ -185,7 +185,7 @@ cost** (see `docs/BENCHMARKS.md` Phase 4): it structurally cannot affect a
 token the trie walk already matched.
 
 Same posture as `UnigramDp`'s frequencies: no trained `HmmModel` ships with
-the crate (see `ATTRIBUTION.md`) — callers build one with
+the crate (see `core/ATTRIBUTION.md`) — callers build one with
 `HmmModel::from_counts(...)` from a segmented corpus they're licensed to
 use.
 
@@ -193,7 +193,7 @@ use.
 
 Every prior phase measured its effect against khPOS — but khPOS is
 gitignored (CC BY-NC-SA, download-only, never committed — see
-`ATTRIBUTION.md`) and needs a network clone, so it can't be the thing that
+`core/ATTRIBUTION.md`) and needs a network clone, so it can't be the thing that
 gates every commit in CI. `eval/tests/regression.rs` solves that with a
 different, deliberately smaller corpus: `eval/tests/fixtures/regression.word`,
 15 sentences written for this project (not derived from khPOS or anywhere

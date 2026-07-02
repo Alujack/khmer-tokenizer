@@ -6,7 +6,7 @@ members = ["core", "cli", "eval", "xtask"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/CHANGEME/khmer-tokenizer"
+repository = "https://github.com/Alujack/khmer-tokenizer"
 authors = ["Yoeurn Yan <yoeurn.yan.dev@gmail.com>"]
 
 # Optimize release builds for the small, hot segmentation loop.

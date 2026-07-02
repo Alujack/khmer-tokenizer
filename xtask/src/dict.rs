@@ -1,5 +1,5 @@
 //! Dictionary preparation: clean a raw wordlist and render it as
-//! `core/src/dict.txt`. See `ATTRIBUTION.md` for the source and license.
+//! `core/src/dict.txt`. See `core/ATTRIBUTION.md` for the source and license.
 
 /// Clean a raw one-word-per-line wordlist: trim, drop blank/comment lines,
 /// and dedupe (first occurrence wins), preserving source order.
@@ -26,7 +26,7 @@ pub fn render_dict_txt(words: &[String]) -> String {
          # One word per line. Blank lines and lines starting with '#' are ignored.\n\
          #\n\
          # {} words, sourced from chamkho's khmerdict.txt (MIT license, copyright\n\
-         # SIL NRSI) via `cargo xtask prepare-dict`. See ATTRIBUTION.md.\n\n",
+         # SIL NRSI) via `cargo xtask prepare-dict`. See core/ATTRIBUTION.md.\n\n",
         words.len()
     );
     for word in words {

@@ -19,6 +19,8 @@ input:   សួស្តីអ្នកទាំងអស់គ្នា
 output:  ["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]
 ```
 
+⚡ **Live Interactive Demo**: [Try it now in your browser!](https://alujack.github.io/khmer-tokenizer/playground/)
+
 ## Install
 
 ```bash

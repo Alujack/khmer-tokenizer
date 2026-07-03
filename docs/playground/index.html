@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Khmer Word Segmenter & Tokenizer — Interactive Web Playground</title>
+    <meta name="description" content="Test the fast, dependency-free Khmer word segmenter written in Rust and compiled to WebAssembly. See real-time Khmer character cluster splitting, orthographic normalization, and word tokenization.">
+    <meta name="keywords" content="khmer, nlp, tokenizer, segmentation, cambodia, webassembly, rust, khmer-tokenizer, wordcut, khmercut">
+    
+    <!-- Open Graph / Social Media Metadata -->
+    <meta property="og:title" content="Khmer Word Segmenter & Tokenizer — Interactive Web Playground">
+    <meta property="og:description" content="Fast, dependency-free Khmer word segmenter in Rust & WebAssembly. Live interactive word boundary and character cluster visualizer.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://github.com/Alujack/khmer-tokenizer">
+    
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Noto+Serif+Khmer:wght@400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        /* CSS Variables - Modern HSL Palette & Theme */
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 25, 40, 0.65);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary-glow: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.15) 0%, rgba(0, 0, 0, 0) 60%);
+            --accent-glow: radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.15) 0%, rgba(0, 0, 0, 0) 50%);
+            
+            --color-primary: #6366f1; /* Indigo */
+            --color-primary-hover: #4f46e5;
+            --color-accent: #a78bfa; /* Light Purple */
+            --color-success: #10b981; /* Emerald */
+            --color-warning: #f59e0b; /* Amber */
+            --color-text-main: #f3f4f6; /* White-ish */
+            --color-text-muted: #9ca3af; /* Gray */
+            
+            --font-display: 'Outfit', sans-serif;
+            --font-sans: 'Inter', sans-serif;
+            --font-khmer: 'Noto Serif Khmer', 'Inter', sans-serif;
+            --font-mono: 'Fira Code', monospace;
+            
+            --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Reset & Base */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: var(--primary-glow), var(--accent-glow);
+            background-attachment: fixed;
+            color: var(--color-text-main);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        /* Container & Layout */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            position: relative;
+        }
+
+        .logo-area {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.5rem;
+            color: white;
+            box-shadow: 0 0 25px rgba(99, 102, 241, 0.4);
+            margin-right: 1rem;
+            font-family: var(--font-display);
+        }
+
+        h1 {
+            font-family: var(--font-display);
+            font-size: 2.75rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #ffffff, #c7d2fe, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.025em;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            color: var(--color-text-muted);
+            font-size: 1.15rem;
+            font-weight: 400;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Badges */
+        .badge-row {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+            margin-top: 1.25rem;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--card-border);
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-family: var(--font-mono);
+            color: var(--color-text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .badge-pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--color-success);
+            box-shadow: 0 0 10px var(--color-success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        /* Glassmorphism Cards */
+        .playground-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (min-width: 900px) {
+            .playground-grid {
+                grid-template-columns: 1.2fr 0.8fr;
+            }
+        }
+
+        .panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+            opacity: 0.8;
+        }
+
+        .panel-title {
+            font-family: var(--font-display);
+            font-size: 1.35rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: white;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+        }
+
+        .panel-subtitle {
+            font-size: 0.9rem;
+            color: var(--color-text-muted);
+            font-weight: 400;
+        }
+
+        /* Form Controls */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--color-accent);
+        }
+
+        .select-wrapper {
+            position: relative;
+        }
+
+        select {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            color: var(--color-text-main);
+            font-family: var(--font-sans);
+            font-size: 0.95rem;
+            outline: none;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        select:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+        }
+
+        .select-wrapper::after {
+            content: '▼';
+            font-size: 0.7rem;
+            position: absolute;
+            right: 1.25rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--color-text-muted);
+            pointer-events: none;
+        }
+
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .3s;
+            border-radius: 34px;
+        }
+
+        .slider::before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--color-primary);
+        }
+
+        input:checked + .slider::before {
+            transform: translateX(20px);
+        }
+
+        /* Inputs & Textareas */
+        .input-area {
+            position: relative;
+        }
+
+        textarea {
+            width: 100%;
+            height: 180px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            color: var(--color-text-main);
+            font-family: var(--font-khmer);
+            font-size: 1.25rem;
+            outline: none;
+            resize: none;
+            transition: var(--transition-smooth);
+            line-height: 1.8;
+        }
+
+        textarea:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        /* Presets / Templates */
+        .presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .preset-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 0.5rem 0.85rem;
+            font-family: var(--font-khmer);
+            font-size: 0.9rem;
+            color: var(--color-accent);
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        .preset-btn:hover {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: var(--color-primary);
+            color: white;
+        }
+
+        /* Results / Output Rendering */
+        .output-container {
+            min-height: 180px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1.25rem;
+            overflow-y: auto;
+        }
+
+        .token-flow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 0.35rem;
+            font-family: var(--font-khmer);
+            font-size: 1.35rem;
+            line-height: 2.2;
+        }
+
+        .token-chip {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
+            border: 1px solid rgba(139, 92, 246, 0.25);
+            color: var(--color-text-main);
+            padding: 0.15rem 0.65rem;
+            border-radius: 6px;
+            display: inline-block;
+            transition: var(--transition-smooth);
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        .token-chip:hover {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%);
+            border-color: var(--color-accent);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+        }
+
+        /* OOV or Non-Khmer differentiation */
+        .token-chip.non-khmer {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.1);
+            color: var(--color-text-muted);
+        }
+
+        .token-chip.zwsp-mark {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: var(--color-success);
+            color: var(--color-success);
+        }
+
+        /* Debug / Inspector Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            margin-bottom: 1rem;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 0.75rem 1.25rem;
+            color: var(--color-text-muted);
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            position: relative;
+        }
+
+        .tab-btn:hover {
+            color: white;
+        }
+
+        .tab-btn.active {
+            color: var(--color-accent);
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: var(--color-accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-family: var(--font-mono);
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--color-accent);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            margin-top: 0.25rem;
+        }
+
+        /* KCC visualizer rules */
+        .kcc-box {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            font-family: var(--font-khmer);
+        }
+
+        .kcc-node {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px dashed rgba(255, 255, 255, 0.15);
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            text-align: center;
+            position: relative;
+        }
+
+        .kcc-node-sub {
+            font-size: 0.7rem;
+            font-family: var(--font-mono);
+            color: var(--color-text-muted);
+            margin-top: 0.25rem;
+        }
+
+        /* Normalizer compare rules */
+        .norm-compare {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            padding: 1rem;
+            border: 1px solid var(--card-border);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .norm-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.35rem;
+        }
+
+        .norm-row:last-child {
+            border: none;
+            padding: 0;
+        }
+
+        .norm-label {
+            color: var(--color-text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .norm-val {
+            font-family: var(--font-khmer);
+            font-size: 1.15rem;
+            color: var(--color-text-main);
+        }
+
+        .norm-bytes {
+            font-size: 0.75rem;
+            color: var(--color-accent);
+        }
+
+        .norm-diff {
+            color: var(--color-warning);
+            background: rgba(245, 158, 11, 0.1);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 2rem 0;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--color-text-muted);
+        }
+
+        footer a {
+            color: var(--color-primary);
+            text-decoration: none;
+            transition: var(--transition-smooth);
+        }
+
+        footer a:hover {
+            color: var(--color-accent);
+            text-decoration: underline;
+        }
+
+        /* Splash Loader */
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(99, 102, 241, 0.1);
+            border-top: 3px solid var(--color-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loader-text {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            color: var(--color-text-muted);
+            letter-spacing: 0.05em;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Splash Loader -->
+    <div id="loader" class="loader-overlay">
+        <div class="spinner"></div>
+        <div class="loader-text">INITIALIZING WASM ENGINE...</div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-area">
+                <div class="logo-icon">ខ្មែរ</div>
+            </div>
+            <h1>khmer-tokenizer</h1>
+            <p>A fast, dependency-free Khmer word segmenter written in Rust and compiled to WebAssembly.</p>
+            <div class="badge-row">
+                <div class="badge">
+                    <span class="badge-pulse"></span>
+                    <span>WASM Engine Live</span>
+                </div>
+                <div class="badge">
+                    <span>Rust Core v0.2.2</span>
+                </div>
+                <div class="badge">
+                    <span>MIT/Apache-2.0</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="playground-grid">
+            
+            <!-- Left Panel: Input / Output -->
+            <section class="panel">
+                <div class="panel-title">
+                    <span>Tokenizer Sandbox</span>
+                    <span class="panel-subtitle" id="execution-time">Ready</span>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label" for="tokenizer-input">Input Khmer Text</label>
+                    <div class="input-area">
+                        <textarea id="tokenizer-input" placeholder="វាយបញ្ចូលអត្ថបទខ្មែរនៅទីនេះ..." autofocus>សួស្តីអ្នកទាំងអស់គ្នា! ខ្ញុំស្រឡាញ់ភាសាខ្មែរ និងកូដ Rust។</textarea>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Sample Presets</label>
+                    <div class="presets">
+                        <button class="preset-btn" id="preset-1" data-text="សួស្តីអ្នកទាំងអស់គ្នា">សួស្តីអ្នកទាំងអស់គ្នា</button>
+                        <button class="preset-btn" id="preset-2" data-text="ខ្ញុំស្រឡាញ់កម្ពុជា">ខ្ញុំស្រឡាញ់កម្ពុជា</button>
+                        <button class="preset-btn" id="preset-3" data-text="ភាសាខ្មែរជាភាសាជាតិរបស់យើង">ភាសាខ្មែរជាភាសាជាតិ</button>
+                        <button class="preset-btn" id="preset-4" data-text="សិទិ្ធមនុស្ស (typo form)">សិទិ្ធមនុស្ស (Typo)</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Segmented Output</label>
+                    <div class="output-container">
+                        <div class="token-flow" id="segmented-output">
+                            <!-- Tokens will render here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Controls & Analysis -->
+            <section class="panel">
+                <div class="panel-title">
+                    <span>Configuration & Diagnostics</span>
+                </div>
+
+                <!-- Parameters -->
+                <div class="control-group">
+                    <label class="control-label" for="strategy-select">Segmentation Strategy</label>
+                    <div class="select-wrapper">
+                        <select id="strategy-select">
+                            <option value="fmm">Forward Max Match (Default)</option>
+                            <option value="bimm">Bi-directional Max Match (BiMM)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="toggle-group">
+                        <div>
+                            <div class="control-label" style="margin-bottom: 0.15rem;">Orthographic Normalizer</div>
+                            <div style="font-size: 0.75rem; color: var(--color-text-muted);">Auto-repair typing combining order</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="normalize-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Debugger Inspector tabs -->
+                <div class="control-group">
+                    <div class="tabs">
+                        <button class="tab-btn active" id="tab-stats-btn">Statistics</button>
+                        <button class="tab-btn" id="tab-kcc-btn">KCC Inspector</button>
+                        <button class="tab-btn" id="tab-norm-btn">Normalizer</button>
+                    </div>
+
+                    <!-- Tab 1: Stats -->
+                    <div class="tab-content active" id="tab-stats">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-words">0</div>
+                                <div class="stat-label">Words</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-chars">0</div>
+                                <div class="stat-label">Chars</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-kcc">0</div>
+                                <div class="stat-label">Clusters</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: KCC Visualizer -->
+                    <div class="tab-content" id="tab-kcc">
+                        <div class="output-container" style="min-height: 120px;">
+                            <div class="kcc-box" id="kcc-visualizer">
+                                <!-- KCC list will render here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 3: Normalizer Visualizer -->
+                    <div class="tab-content" id="tab-norm">
+                        <div class="norm-compare">
+                            <div class="norm-row">
+                                <span class="norm-label">Raw Input:</span>
+                                <span class="norm-val" id="norm-raw-val">-</span>
+                            </div>
+                            <div class="norm-row">
+                                <span class="norm-label">Raw Bytes:</span>
+                                <span class="norm-bytes" id="norm-raw-bytes">-</span>
+                            </div>
+                            <div class="norm-row" style="margin-top: 0.5rem; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 0.5rem;">
+                                <span class="norm-label">Normalized:</span>
+                                <span class="norm-val" id="norm-clean-val">-</span>
+                            </div>
+                            <div class="norm-row">
+                                <span class="norm-label">Clean Bytes:</span>
+                                <span class="norm-bytes" id="norm-clean-bytes">-</span>
+                            </div>
+                            <div class="norm-row" style="margin-top: 0.5rem;">
+                                <span class="norm-label">Status:</span>
+                                <span id="norm-status-badge">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <p>Developed with ❤️ in Rust and WebAssembly. Permissively licensed under MIT OR Apache-2.0.</p>
+            <p style="margin-top: 0.5rem;">View source and read paper: <a href="https://github.com/Alujack/khmer-tokenizer" target="_blank" id="repo-link">GitHub Repository</a></p>
+        </footer>
+    </div>
+
+    <!-- WASM Loading and Playground logic -->
+    <script type="module">
+        import init, { KhmerTokenizer, splitKcc, normalize, isKhmer } from './pkg/kh_tokenizer.js';
+
+        let tokenizer = null;
+
+        // Helper to convert string to UTF-8 hex escape sequence for display
+        function stringToHexEscapes(str) {
+            return Array.from(str).map(c => {
+                const hex = c.charCodeAt(0).toString(16).toUpperCase();
+                return 'U+' + hex.padStart(4, '0');
+            }).join(' ');
+        }
+
+        // Initialize WebAssembly
+        async function run() {
+            try {
+                await init();
+                
+                // Hide loader
+                const loader = document.getElementById('loader');
+                loader.style.opacity = 0;
+                setTimeout(() => loader.style.display = 'none', 500);
+
+                // Initial tokenizer instance
+                updateTokenizer();
+                
+                // Run initial tokenization
+                processText();
+
+                // Setup Event Listeners
+                document.getElementById('tokenizer-input').addEventListener('input', processText);
+                document.getElementById('strategy-select').addEventListener('change', () => {
+                    updateTokenizer();
+                    processText();
+                });
+                document.getElementById('normalize-toggle').addEventListener('change', () => {
+                    updateTokenizer();
+                    processText();
+                });
+
+                // Presets
+                document.querySelectorAll('.preset-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        document.getElementById('tokenizer-input').value = e.target.getAttribute('data-text');
+                        processText();
+                    });
+                });
+
+                // Diagnostics Tabs
+                setupTabs();
+
+            } catch (err) {
+                console.error("Failed to initialize WASM engine", err);
+                document.getElementById('loader').innerHTML = `<div style="color: #ef4444; font-weight: bold;">FAILED TO LOAD WASM ENGINE: ${err.message}</div>`;
+            }
+        }
+
+        // Re-instantiate tokenizer based on selected options
+        function updateTokenizer() {
+            const strategy = document.getElementById('strategy-select').value;
+            const norm = document.getElementById('normalize-toggle').checked;
+            
+            tokenizer = new KhmerTokenizer({
+                strategy: strategy,
+                normalization: norm
+            });
+        }
+
+        // Core Text Processing & Segmenting
+        function processText() {
+            const text = document.getElementById('tokenizer-input').value;
+            if (!text) {
+                document.getElementById('segmented-output').innerHTML = '<span style="color: var(--color-text-muted); font-style: italic;">No text provided</span>';
+                document.getElementById('stat-words').innerText = '0';
+                document.getElementById('stat-chars').innerText = '0';
+                document.getElementById('stat-kcc').innerText = '0';
+                document.getElementById('kcc-visualizer').innerHTML = '';
+                return;
+            }
+
+            // Time compilation
+            const t0 = performance.now();
+            const tokens = tokenizer.segment(text);
+            const t1 = performance.now();
+            const elapsed = t1 - t0;
+
+            // Update performance label
+            const durationText = elapsed < 1 ? 
+                `${(elapsed * 1000).toFixed(0)} µs` : 
+                `${elapsed.toFixed(2)} ms`;
+            document.getElementById('execution-time').innerText = `Processed in ${durationText}`;
+
+            // Render Segmented output
+            const outputDiv = document.getElementById('segmented-output');
+            outputDiv.innerHTML = '';
+            
+            tokens.forEach(tok => {
+                const chip = document.createElement('span');
+                chip.className = 'token-chip';
+                chip.innerText = tok;
+
+                // Add special coloring for non-Khmer words (e.g. English, numbers)
+                const isKh = Array.from(tok).some(c => isKhmer(c));
+                if (!isKh) {
+                    chip.classList.add('non-khmer');
+                }
+
+                // Attach click to show hex bytes in inspector
+                chip.addEventListener('click', () => {
+                    alert(`Word: "${tok}"\nUnicode Points: ${stringToHexEscapes(tok)}`);
+                });
+
+                outputDiv.appendChild(chip);
+            });
+
+            // Update Stats
+            document.getElementById('stat-words').innerText = tokens.filter(t => t.trim().length > 0).length;
+            document.getElementById('stat-chars').innerText = text.length;
+
+            // KCC Splitting Visualizer
+            const kccs = splitKcc(text);
+            document.getElementById('stat-kcc').innerText = kccs.length;
+
+            const kccDiv = document.getElementById('kcc-visualizer');
+            kccDiv.innerHTML = '';
+            kccs.forEach(kcc => {
+                const node = document.createElement('div');
+                node.className = 'kcc-node';
+                
+                const valSpan = document.createElement('div');
+                valSpan.innerText = kcc;
+                
+                const hexSpan = document.createElement('div');
+                hexSpan.className = 'kcc-node-sub';
+                hexSpan.innerText = kcc.length > 1 ? `${kcc.length} chars` : stringToHexEscapes(kcc).replace('U+', '');
+
+                node.appendChild(valSpan);
+                node.appendChild(hexSpan);
+                kccDiv.appendChild(node);
+            });
+
+            // Normalization Visualizer
+            const normText = normalize(text);
+            document.getElementById('norm-raw-val').innerText = text;
+            document.getElementById('norm-raw-bytes').innerText = stringToHexEscapes(text);
+            document.getElementById('norm-clean-val').innerText = normText;
+            document.getElementById('norm-clean-bytes').innerText = stringToHexEscapes(normText);
+
+            const statusBadge = document.getElementById('norm-status-badge');
+            if (text === normText) {
+                statusBadge.innerText = 'NO REORDERING REQUIRED';
+                statusBadge.className = 'norm-diff';
+                statusBadge.style.color = 'var(--color-success)';
+                statusBadge.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+            } else {
+                statusBadge.innerText = 'AUTO-REORDERED';
+                statusBadge.className = 'norm-diff';
+                statusBadge.style.color = 'var(--color-warning)';
+                statusBadge.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+            }
+        }
+
+        // Interactive Tab Switching
+        function setupTabs() {
+            const tabs = document.querySelectorAll('.tab-btn');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    // Remove active from all tabs
+                    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+                    // Add active to current
+                    e.target.classList.add('active');
+                    const targetId = e.target.id.replace('-btn', '');
+                    document.getElementById(targetId).classList.add('active');
+                });
+            });
+        }
+
+        // Start
+        run();
+    </script>
+</body>
+</html>

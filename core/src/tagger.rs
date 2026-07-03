@@ -21,7 +21,7 @@
 
 use std::collections::HashMap;
 
-use crate::kcc::{is_khmer_base, split_kcc};
+use crate::kcc::{is_khmer, is_khmer_base, is_khmer_digit, split_kcc, COENG};
 
 const NUM_STATES: usize = 4;
 const BEGIN: usize = 0;
@@ -45,9 +45,36 @@ pub struct TaggerModel {
     weights: HashMap<String, [f64; NUM_STATES]>,
 }
 
+/// Helper function to classify KCC clusters for features.
+fn cluster_class(cluster: &str) -> &'static str {
+    let first = match cluster.chars().next() {
+        Some(c) => c,
+        None => return "EMPTY",
+    };
+    if is_khmer(first) {
+        if is_khmer_digit(first) {
+            "KhmerDigit"
+        } else if is_khmer_base(first) {
+            if cluster.contains(COENG) {
+                "KhmerSub"
+            } else {
+                "KhmerBase"
+            }
+        } else {
+            "KhmerPunc"
+        }
+    } else if first.is_ascii_digit() {
+        "Digit"
+    } else if first.is_whitespace() {
+        "Space"
+    } else {
+        "NonKhmer"
+    }
+}
+
 /// Context feature strings for position `i` of `clusters`. Templates:
-/// current cluster, neighbors at ±1 and ±2, the two adjacent bigrams, and
-/// the current cluster's length in chars.
+/// current cluster, neighbors at ±1 and ±2, adjacent bigrams, trigrams,
+/// cluster length, and cluster type-class features.
 fn features(clusters: &[String], i: usize) -> Vec<String> {
     let at = |k: isize| -> &str {
         if k < 0 || k as usize >= clusters.len() {
@@ -56,16 +83,44 @@ fn features(clusters: &[String], i: usize) -> Vec<String> {
             &clusters[k as usize]
         }
     };
+
+    let class_at = |k: isize| -> &str {
+        if k < 0 || k as usize >= clusters.len() {
+            "<s>"
+        } else {
+            cluster_class(&clusters[k as usize])
+        }
+    };
+
     let i = i as isize;
     vec![
+        // Character Cluster Unigrams
         format!("U0={}", at(i)),
         format!("U-1={}", at(i - 1)),
         format!("U+1={}", at(i + 1)),
         format!("U-2={}", at(i - 2)),
         format!("U+2={}", at(i + 2)),
+
+        // Cluster Bigrams
         format!("B-1={}|{}", at(i - 1), at(i)),
         format!("B+1={}|{}", at(i), at(i + 1)),
+        format!("B-2={}|{}", at(i - 2), at(i - 1)),
+        format!("B+2={}|{}", at(i + 1), at(i + 2)),
+
+        // Cluster Trigrams
+        format!("T0={}|{}|{}", at(i - 1), at(i), at(i + 1)),
+
+        // Cluster Length
         format!("L0={}", at(i).chars().count()),
+
+        // Type Class Unigrams
+        format!("C0={}", class_at(i)),
+        format!("C-1={}", class_at(i - 1)),
+        format!("C+1={}", class_at(i + 1)),
+
+        // Type Class Bigrams
+        format!("CB-1={}|{}", class_at(i - 1), class_at(i)),
+        format!("CB+1={}|{}", class_at(i), class_at(i + 1)),
     ]
 }
 

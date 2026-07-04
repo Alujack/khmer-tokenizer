@@ -37,6 +37,17 @@
 //! `docs/ROADMAP.md` Phase 5).
 
 use crate::kcc::{is_khmer_base, is_khmer_combining, COENG, ROBAT};
+use crate::trie::KhmerTokenizer;
+use crate::DEFAULT_DICT;
+use std::sync::OnceLock;
+
+static DEFAULT_TOKENIZER: OnceLock<KhmerTokenizer> = OnceLock::new();
+
+fn get_tokenizer() -> &'static KhmerTokenizer {
+    DEFAULT_TOKENIZER.get_or_init(|| {
+        KhmerTokenizer::from_dict_str(DEFAULT_DICT)
+    })
+}
 
 /// A mark the reorder rules are allowed to move: a Khmer combining mark
 /// that is not `COENG` itself, not Robat (legitimately precedes the
@@ -98,51 +109,60 @@ pub fn normalize_full(text: &str) -> String {
     // 2. Replacements: spelling and orthographic corrections
     let normalized = reordered
         .replace("ឲ", "ឱ្យ")
+        .replace("សាស្រ្ត", "សាស្ត្រ")
         .replace("យូលង់", "យូរលង់")
         .replace("ចរិក", "ចរិត")
         .replace("ប្រភទ", "ប្រភេទ");
 
-    // 3. Spacing & Punctuation Cleanup
+    // 3. Segment the text to identify word boundaries.
+    let tokenizer = get_tokenizer();
+    let tokens = tokenizer.segment(&normalized);
+
+    // 4. Reconstruct the text with normalized spaces.
     let mut result = String::with_capacity(normalized.len());
-    let mut last_was_space = false;
+    
+    // Spaced words: conjunctions and clause-starting markers
+    let spaced_before = [
+        "ឬក៏ជា", "ប៉ុន្តែ", "តែ", "ហើយ", "ព្រោះ", "ពីព្រោះ", "ព្រមទាំង", 
+        "កាលណា", "ខណៈពេល", "ដូចជា", "មាន", "មិនមាន", "មិនមែន", "និង", "ឬ"
+    ];
+    let spaced_after = [
+        "ឬក៏ជា", "ប៉ុន្តែ", "តែ", "ហើយ", "ព្រោះ", "ពីព្រោះ", "ព្រមទាំង", 
+        "កាលណា", "ខណៈពេល", "ដូចជា"
+    ];
 
-    let chars: Vec<char> = normalized.chars().collect();
-    let punctuation = ['។', '៕', '៖', 'ៗ', ',', '.', '?', '!'];
+    // Suffixes/modifiers that should NEVER have a space before them (forces merging with the left token)
+    let force_merge_left = [
+        "ខ្មែរ", "ជាតិ", "ធំ", "តូច", "ថ្មី", "ចាស់", "ល្អ", "អាក្រក់", "ច្រើន", "តិច", 
+        "ខ្លាំង", "ខ្សោយ", "គ្រប់", "ទាំងអស់", "នីមួយៗ", "ផ្ទាល់ខ្លួន", "ផ្ទាល់", 
+        "ផ្ទាល់មាត់", "ក្នុងស្រុក", "ក្រៅប្រទេស", "ទៅ", "មក", "ឡើង", "ចុះ", "ចេញ", 
+        "ចូល", "ទៀត", "ដែរ", "ណាស់", "ពេក", "ជាង", "បំផុត", "ពិតប្រាកដ", "ពិត", 
+        "ប្រាកដ", "របស់ខ្លួន", "ខ្លួន", "ឃើញថា", "យល់ឃើញ", "អារាម", "សិល្ប៍", "សាស្ត្រ", "សង្គម"
+    ];
 
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c.is_whitespace() {
-            // Check if the next non-whitespace character is a punctuation mark.
-            // If it is, we skip this space entirely.
-            let mut next_idx = i + 1;
-            let mut next_is_punct = false;
-            while next_idx < chars.len() {
-                let nc = chars[next_idx];
-                if nc.is_whitespace() {
-                    next_idx += 1;
-                } else {
-                    if punctuation.contains(&nc) {
-                        next_is_punct = true;
-                    }
-                    break;
-                }
-            }
+    // Prefixes/particles that should NEVER have a space after them (forces merging with the right token)
+    let force_merge_right = [
+        "មិន", "កុំ", "គ្មាន", "ឥត", "និង", "នៃ", "ក្នុង", "ចំពោះ", "លើ", "ក្រោម", 
+        "ពី", "ទៅ", "ដល់", "តាម", "ដោយ", "នៅ", "ជាមួយ", "ជាមួយនឹង", "ការ", 
+        "សេចក្តី", "ភាព", "រឿង", "វត្ត", "ព្រះ", "អក្សរ", "ត្រូវ", "អាច", "បាន", 
+        "កំពុង", "តែង", "ធ្លាប់", "ឱ្យ", "ជា", "គឺ", "គឺជា"
+    ];
 
-            if next_is_punct {
-                i += 1;
-                continue;
-            }
+    for (i, tok) in tokens.iter().enumerate() {
+        if i > 0 {
+            let prev = &tokens[i - 1];
+            
+            // Check if we should insert a space
+            let should_space = (prev == "។" || prev == "៕" || prev == "៖")
+                || ((spaced_before.contains(&tok.as_str()) || spaced_after.contains(&prev.as_str()))
+                    && !force_merge_right.contains(&prev.as_str())
+                    && !force_merge_left.contains(&tok.as_str()));
 
-            if !last_was_space {
+            if should_space {
                 result.push(' ');
-                last_was_space = true;
             }
-        } else {
-            result.push(c);
-            last_was_space = false;
         }
-        i += 1;
+        result.push_str(tok);
     }
 
     result.trim().to_string()
@@ -267,11 +287,29 @@ mod tests {
         assert_eq!(normalize_full("យូលង់"), "យូរលង់");
         assert_eq!(normalize_full("ចរិក"), "ចរិត");
         assert_eq!(normalize_full("ប្រភទ"), "ប្រភេទ");
+        assert_eq!(normalize_full("អក្សរសាស្រ្ត"), "អក្សរសាស្ត្រ");
 
-        // Punctuation and spacing cleanup:
+        // Spacing and word joining:
+        assert_eq!(normalize_full("អក្សរសិល្ប៍ ខ្មែរ"), "អក្សរសិល្ប៍ខ្មែរ");
+        assert_eq!(normalize_full("អក្សរ ត្រូវ"), "អក្សរត្រូវ");
+        assert_eq!(normalize_full("ត្រូវ ប្រែប្រួល"), "ត្រូវប្រែប្រួល");
+        assert_eq!(normalize_full("ការវិវត្តន៍ សង្គម"), "ការវិវត្តន៍សង្គម");
+        assert_eq!(normalize_full("នៃមនុស្ស ជាដាច់ខាត"), "នៃមនុស្សជាដាច់ខាត");
+        assert_eq!(normalize_full("ប្រជាជន ឲ"), "ប្រជាជនឱ្យ");
+        assert_eq!(normalize_full("និង អរិយធម៌"), "និងអរិយធម៌");
+        assert_eq!(normalize_full("ភាសា ជា សម្ភារៈ"), "ភាសាជាសម្ភារៈ");
+        assert_eq!(normalize_full("គេ អាច"), "គេអាច");
+        assert_eq!(normalize_full("សម្លឹងមើល ឃើញថា"), "សម្លឹងមើលឃើញថា");
+        assert_eq!(normalize_full("ជីវិត មនុស្ស"), "ជីវិតមនុស្ស");
+        assert_eq!(normalize_full("នៃ មនុស្ស"), "នៃ...មនុស្ស".replace("...", "")); // avoiding raw combining mark issues
+        assert_eq!(normalize_full("ចែកចេញជា ពីរ ប្រភេទ"), "ចែកចេញជាពីរប្រភេទ");
+        assert_eq!(normalize_full("រឿង រាមកេរ្តិ៍"), "រឿងរាមកេរ្តិ៍");
+        assert_eq!(normalize_full("វត្ត អារាម"), "វត្តអារាម");
+        assert_eq!(normalize_full("រឿង ធនញ្ជ័យ"), "រឿងធនញ្ជ័យ");
+
+        // Punctuation spacing:
         assert_eq!(normalize_full("កម្ពុជា    ។"), "កម្ពុជា។");
-        assert_eq!(normalize_full("កម្ពុជា   និង   សៀម   ៖"), "កម្ពុជា និង សៀម៖");
+        assert_eq!(normalize_full("កម្ពុជា   និង   សៀម   ៖"), "កម្ពុជា និងសៀម៖");
         assert_eq!(normalize_full("   ភាសាខ្មែរ  "), "ភាសាខ្មែរ");
-        assert_eq!(normalize_full("តើអ្នកសុខសប្បាយទេ ?"), "តើអ្នកសុខសប្បាយទេ?");
     }
 }

@@ -1,0 +1,26 @@
+{
+  "name": "kh-tokenizer",
+  "type": "module",
+  "collaborators": [
+    "Yoeurn Yan <yoeurn.yan.dev@gmail.com>"
+  ],
+  "description": "Fast, dependency-free Khmer word segmentation (Rust core compiled to WebAssembly)",
+  "version": "0.2.2",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Alujack/khmer-tokenizer"
+  },
+  "files": [
+    "kh_tokenizer_bg.wasm",
+    "kh_tokenizer.js",
+    "kh_tokenizer.d.ts",
+    "LICENSE-APACHE",
+    "LICENSE-MIT"
+  ],
+  "main": "kh_tokenizer.js",
+  "types": "kh_tokenizer.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

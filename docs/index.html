@@ -792,17 +792,35 @@
                                 <span class="norm-label">Raw Bytes:</span>
                                 <span class="norm-bytes" id="norm-raw-bytes">-</span>
                             </div>
-                            <div class="norm-row" style="margin-top: 0.5rem; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 0.5rem;">
-                                <span class="norm-label">Normalized:</span>
+                            <div class="norm-row" style="margin-top: 0.5rem; border-top: 1px dashed rgba(255, 255, 255, 0.15); padding-top: 0.5rem;">
+                                <span class="norm-label" style="color: var(--color-accent); font-weight: bold;">Unicode Reordering (Char-Order Only):</span>
+                            </div>
+                            <div class="norm-row">
+                                <span class="norm-label">Reordered Output:</span>
                                 <span class="norm-val" id="norm-clean-val">-</span>
                             </div>
                             <div class="norm-row">
-                                <span class="norm-label">Clean Bytes:</span>
+                                <span class="norm-label">Reordered Bytes:</span>
                                 <span class="norm-bytes" id="norm-clean-bytes">-</span>
                             </div>
-                            <div class="norm-row" style="margin-top: 0.5rem;">
-                                <span class="norm-label">Status:</span>
+                            <div class="norm-row">
+                                <span class="norm-label">Reordered Status:</span>
                                 <span id="norm-status-badge">-</span>
+                            </div>
+                            <div class="norm-row" style="margin-top: 0.5rem; border-top: 1px dashed rgba(255, 255, 255, 0.15); padding-top: 0.5rem;">
+                                <span class="norm-label" style="color: var(--color-accent); font-weight: bold;">Full Normalization (Spelling/Spacing/Ortho):</span>
+                            </div>
+                            <div class="norm-row">
+                                <span class="norm-label">Normalized Output:</span>
+                                <span class="norm-val" id="norm-full-val">-</span>
+                            </div>
+                            <div class="norm-row">
+                                <span class="norm-label">Normalized Bytes:</span>
+                                <span class="norm-bytes" id="norm-full-bytes">-</span>
+                            </div>
+                            <div class="norm-row">
+                                <span class="norm-label">Normalization Status:</span>
+                                <span id="norm-full-status-badge">-</span>
                             </div>
                         </div>
                     </div>
@@ -819,7 +837,7 @@
 
     <!-- WASM Loading and Playground logic -->
     <script type="module">
-        import init, { KhmerTokenizer, splitKcc, normalize, isKhmer } from './pkg/kh_tokenizer.js';
+        import init, { KhmerTokenizer, splitKcc, normalize, normalizeFull, isKhmer } from './pkg/kh_tokenizer.js';
 
         let tokenizer = null;
 
@@ -977,6 +995,24 @@
                 statusBadge.className = 'norm-diff';
                 statusBadge.style.color = 'var(--color-warning)';
                 statusBadge.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+            }
+
+            // Full Normalization Visualizer
+            const fullNormText = normalizeFull(text);
+            document.getElementById('norm-full-val').innerText = fullNormText;
+            document.getElementById('norm-full-bytes').innerText = stringToHexEscapes(fullNormText);
+
+            const fullStatusBadge = document.getElementById('norm-full-status-badge');
+            if (text === fullNormText) {
+                fullStatusBadge.innerText = 'NO NORMALIZATION REQUIRED';
+                fullStatusBadge.className = 'norm-diff';
+                fullStatusBadge.style.color = 'var(--color-success)';
+                fullStatusBadge.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+            } else {
+                fullStatusBadge.innerText = 'FULLY NORMALIZED';
+                fullStatusBadge.className = 'norm-diff';
+                fullStatusBadge.style.color = 'var(--color-warning)';
+                fullStatusBadge.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
             }
         }
 

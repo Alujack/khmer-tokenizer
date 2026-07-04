@@ -14,6 +14,7 @@ it into words. Most general-purpose tokenizers either ignore Khmer or shatter it
 into meaningless character fragments. This library segments Khmer text correctly
 and quickly, with no external dependencies.
 
+
 ```text
 input:   សួស្តីអ្នកទាំងអស់គ្នា
 output:  ["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]

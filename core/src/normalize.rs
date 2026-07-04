@@ -87,6 +87,67 @@ pub fn normalize(text: &str) -> String {
     chars.into_iter().collect()
 }
 
+/// Fully normalize text: performs combining character ordering, orthographic
+/// replacements (e.g. ឲ -> ឱ្យ), common spelling corrections, and punctuation/whitespace
+/// cleanup. Note that this changes string length, so byte offsets will not align
+/// with the original text.
+pub fn normalize_full(text: &str) -> String {
+    // 1. Combining character reordering (existing rule 1 & rule 2)
+    let reordered = normalize(text);
+
+    // 2. Replacements: spelling and orthographic corrections
+    let normalized = reordered
+        .replace("ឲ", "ឱ្យ")
+        .replace("យូលង់", "យូរលង់")
+        .replace("ចរិក", "ចរិត")
+        .replace("ប្រភទ", "ប្រភេទ");
+
+    // 3. Spacing & Punctuation Cleanup
+    let mut result = String::with_capacity(normalized.len());
+    let mut last_was_space = false;
+
+    let chars: Vec<char> = normalized.chars().collect();
+    let punctuation = ['។', '៕', '៖', 'ៗ', ',', '.', '?', '!'];
+
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() {
+            // Check if the next non-whitespace character is a punctuation mark.
+            // If it is, we skip this space entirely.
+            let mut next_idx = i + 1;
+            let mut next_is_punct = false;
+            while next_idx < chars.len() {
+                let nc = chars[next_idx];
+                if nc.is_whitespace() {
+                    next_idx += 1;
+                } else {
+                    if punctuation.contains(&nc) {
+                        next_is_punct = true;
+                    }
+                    break;
+                }
+            }
+
+            if next_is_punct {
+                i += 1;
+                continue;
+            }
+
+            if !last_was_space {
+                result.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            result.push(c);
+            last_was_space = false;
+        }
+        i += 1;
+    }
+
+    result.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +252,26 @@ mod tests {
         let once = normalize(nfc_damaged);
         assert_eq!(normalize(&once), once);
         assert_eq!(once.len(), nfc_damaged.len());
+    }
+
+    #[test]
+    fn normalize_full_reorders_and_corrects_spelling_and_spacing() {
+        // Unicode combining order correction:
+        assert_eq!(normalize_full("សិទិ្ធ"), "សិទ្ធិ");
+
+        // Orthographic mapping:
+        assert_eq!(normalize_full("ឲ"), "ឱ្យ");
+        assert_eq!(normalize_full("ខ្ញុំឲនំបុ័ងទៅសត្វ"), "ខ្ញុំឱ្យនំបុ័ងទៅសត្វ");
+
+        // Spelling correction:
+        assert_eq!(normalize_full("យូលង់"), "យូរលង់");
+        assert_eq!(normalize_full("ចរិក"), "ចរិត");
+        assert_eq!(normalize_full("ប្រភទ"), "ប្រភេទ");
+
+        // Punctuation and spacing cleanup:
+        assert_eq!(normalize_full("កម្ពុជា    ។"), "កម្ពុជា។");
+        assert_eq!(normalize_full("កម្ពុជា   និង   សៀម   ៖"), "កម្ពុជា និង សៀម៖");
+        assert_eq!(normalize_full("   ភាសាខ្មែរ  "), "ភាសាខ្មែរ");
+        assert_eq!(normalize_full("តើអ្នកសុខសប្បាយទេ ?"), "តើអ្នកសុខសប្បាយទេ?");
     }
 }

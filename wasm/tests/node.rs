@@ -2,7 +2,7 @@
 //! with `wasm-pack test --node wasm`. Mirrors py/tests/test_tokenizer.py.
 
 use js_sys::{Array, Object, Reflect};
-use kh_tokenizer::{is_khmer, normalize, split_kcc, KhmerTokenizer};
+use kh_tokenizer::{is_khmer, normalize, normalize_full, split_kcc, KhmerTokenizer};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -126,6 +126,13 @@ fn normalization_repairs_malformed_input_and_can_be_disabled() {
 fn free_functions() {
     assert_eq!(split_kcc("ខ្មែរ"), vec!["ខ្មែ", "រ"]);
     assert_eq!(normalize("សិទិ្ធ"), "សិទ្ធិ");
+    assert_eq!(normalize_full("សិទិ្ធ"), "សិទ្ធិ");
+    assert_eq!(normalize_full("ឲ"), "ឱ្យ");
+    assert_eq!(normalize_full("យូលង់"), "យូរលង់");
+    assert_eq!(normalize_full("ចរិក"), "ចរិត");
+    assert_eq!(normalize_full("ប្រភទ"), "ប្រភេទ");
+    assert_eq!(normalize_full("កម្ពុជា    ។"), "កម្ពុជា។");
+    assert_eq!(normalize_full("   ភាសាខ្មែរ  "), "ភាសាខ្មែរ");
     assert!(is_khmer('ក'));
     assert!(!is_khmer('a'));
 }

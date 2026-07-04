@@ -7,7 +7,7 @@ though the underlying Rust logic is already tested in `core/`.
 
 import pytest
 
-from khmer_tokenizer import KhmerTokenizer, is_khmer, normalize, split_kcc
+from khmer_tokenizer import KhmerTokenizer, is_khmer, normalize, normalize_full, split_kcc
 
 
 def test_default_dict_segments():
@@ -98,3 +98,13 @@ def test_is_khmer_function():
 def test_repr():
     tk = KhmerTokenizer(words=["ភាសា", "ខ្មែរ"])
     assert repr(tk) == "KhmerTokenizer(2 words)"
+
+
+def test_normalize_full_function():
+    assert normalize_full("សិទិ្ធ") == "សិទ្ធិ"
+    assert normalize_full("ឲ") == "ឱ្យ"
+    assert normalize_full("យូលង់") == "យូរលង់"
+    assert normalize_full("ចរិក") == "ចរិត"
+    assert normalize_full("ប្រភទ") == "ប្រភេទ"
+    assert normalize_full("កម្ពុជា    ។") == "កម្ពុជា។"
+    assert normalize_full("   ភាសាខ្មែរ  ") == "ភាសាខ្មែរ"

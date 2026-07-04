@@ -33,7 +33,7 @@ mod trie;
 
 pub use hmm::HmmModel;
 pub use kcc::{is_khmer, is_khmer_base, split_kcc};
-pub use normalize::normalize;
+pub use normalize::{normalize, normalize_full};
 pub use strategy::Strategy;
 pub use tagger::TaggerModel;
 pub use trie::KhmerTokenizer;

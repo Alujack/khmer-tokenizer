@@ -174,6 +174,13 @@ pub fn normalize(text: &str) -> String {
     core::normalize(text)
 }
 
+/// Fully normalize text: performs combining character ordering, orthographic
+/// replacements, common spelling corrections, and punctuation/whitespace cleanup.
+#[wasm_bindgen(js_name = normalizeFull)]
+pub fn normalize_full(text: &str) -> String {
+    core::normalize_full(text)
+}
+
 /// Whether a single character (one code point) is in the Khmer block.
 #[wasm_bindgen(js_name = isKhmer)]
 pub fn is_khmer(c: char) -> bool {

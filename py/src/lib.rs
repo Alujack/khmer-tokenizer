@@ -115,6 +115,13 @@ fn normalize(text: &str) -> String {
     core::normalize(text)
 }
 
+/// Fully normalize text: performs combining character ordering, orthographic
+/// replacements, common spelling corrections, and punctuation/whitespace cleanup.
+#[pyfunction]
+fn normalize_full(text: &str) -> String {
+    core::normalize_full(text)
+}
+
 /// True if the character falls in the Khmer Unicode block.
 #[pyfunction]
 fn is_khmer(c: char) -> bool {
@@ -126,6 +133,7 @@ fn khmer_tokenizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KhmerTokenizer>()?;
     m.add_function(wrap_pyfunction!(split_kcc, m)?)?;
     m.add_function(wrap_pyfunction!(normalize, m)?)?;
+    m.add_function(wrap_pyfunction!(normalize_full, m)?)?;
     m.add_function(wrap_pyfunction!(is_khmer, m)?)?;
     Ok(())
 }

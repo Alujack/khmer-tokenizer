@@ -5,7 +5,7 @@
     "Yoeurn Yan <yoeurn.yan.dev@gmail.com>"
   ],
   "description": "Fast, dependency-free Khmer word segmentation (Rust core compiled to WebAssembly)",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",

@@ -7,7 +7,7 @@
 //! ```js
 //! import { KhmerTokenizer, splitKcc, normalize, isKhmer } from "kh-tokenizer";
 //!
-//! const tk = new KhmerTokenizer(); // embedded default dictionary, forward max-match
+//! const tk = new KhmerTokenizer(); // embedded default dictionary, fewest-words DP
 //! tk.segment("សួស្តីអ្នកទាំងអស់គ្នា");
 //! // ["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]
 //!
@@ -44,9 +44,12 @@ impl KhmerTokenizer {
     /// Options (all optional, matching the Python constructor):
     /// - `words: string[]` — custom word list instead of the embedded
     ///   default dictionary
-    /// - `strategy: "fmm" | "bimm" | "unigram"` — segmentation strategy
+    /// - `strategy: "minwords" | "fmm" | "bimm" | "unigram" | "tagger"` —
+    ///   segmentation strategy (default "minwords")
     /// - `frequencies: Record<string, number>` — word counts for `"unigram"`
     /// - `normalization: boolean` — orthographic normalization (default true)
+    /// - `oovGrouping: boolean` — group unmatched cluster runs into one
+    ///   unknown-word token each (default true)
     #[wasm_bindgen(constructor)]
     pub fn new(options: Option<Object>) -> Result<KhmerTokenizer, JsError> {
         let options = options.unwrap_or_else(Object::new);
@@ -57,10 +60,10 @@ impl KhmerTokenizer {
             let key = key.as_string().unwrap_or_default();
             if !matches!(
                 key.as_str(),
-                "words" | "strategy" | "frequencies" | "tagger" | "normalization"
+                "words" | "strategy" | "frequencies" | "tagger" | "normalization" | "oovGrouping"
             ) {
                 return Err(JsError::new(&format!(
-                    "unknown option {key:?}; expected words, strategy, frequencies, tagger, normalization"
+                    "unknown option {key:?}; expected words, strategy, frequencies, tagger, normalization, oovGrouping"
                 )));
             }
         }
@@ -87,13 +90,14 @@ impl KhmerTokenizer {
                 .as_string()
                 .ok_or_else(|| JsError::new("strategy must be a string"))?;
             let strategy = match name.as_str() {
+                "minwords" => core::Strategy::MinWordsDp,
                 "fmm" => core::Strategy::ForwardMaxMatch,
                 "bimm" => core::Strategy::BiMaxMatch,
                 "unigram" => core::Strategy::UnigramDp,
                 "tagger" => core::Strategy::Tagger,
                 other => {
                     return Err(JsError::new(&format!(
-                        "unknown strategy {other:?}; expected \"fmm\", \"bimm\", \"unigram\", or \"tagger\""
+                        "unknown strategy {other:?}; expected \"minwords\", \"fmm\", \"bimm\", \"unigram\", or \"tagger\""
                     )))
                 }
             };
@@ -138,6 +142,15 @@ impl KhmerTokenizer {
                 .ok_or_else(|| JsError::new("normalization must be a boolean"))?;
             if !on {
                 tokenizer = tokenizer.without_normalization();
+            }
+        }
+
+        if let Some(v) = opt(&options, "oovGrouping") {
+            let on = v
+                .as_bool()
+                .ok_or_else(|| JsError::new("oovGrouping must be a boolean"))?;
+            if !on {
+                tokenizer = tokenizer.without_oov_grouping();
             }
         }
 

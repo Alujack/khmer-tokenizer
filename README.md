@@ -45,18 +45,22 @@ API docs: [docs.rs/khmer-tokenizer-core](https://docs.rs/khmer-tokenizer-core)
 Segmentation runs in three passes:
 
 0. **Normalization pass (on by default)** — [`normalize`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/normalize.rs)
-   repairs two real-world corruptions of the Unicode Khmer syllable
+   repairs four real-world corruptions of the Unicode Khmer syllable
    structure: a shifter, vowel, or sign typed directly *before* a
    `COENG`+consonant subscript pair (the most common typing error, e.g.
-   `សិទិ្ធ` for the correct `សិទ្ធិ`), and a mark stranded *between*
+   `សិទិ្ធ` for the correct `សិទ្ធិ`); a mark stranded *between*
    `COENG` and its consonant — which is what Unicode NFC itself produces
    on Khmer text, thanks to erroneous-and-frozen canonical combining
    classes (see [RESEARCH-3.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/RESEARCH-3.md) §2a), so any
    NFC-processing pipeline upstream of you silently corrupts Khmer this
-   way. Pure character reordering, so it's byte-length-preserving. Opt out
+   way; subscript `រ` typed before another subscript (`ស្រ្តី` for the
+   correct `ស្ត្រី` — fonts render both identically, so real text is full
+   of it); and marks typed out of canonical order within a cluster (`ំា`
+   for `ាំ`). All pure character reordering, so it's
+   byte-length-preserving. Dictionary entries are indexed under both their
+   raw and normalized spellings, so lookups work from either side. Opt out
    with `.without_normalization()` — see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)
-   for why it's kept on by default even though its measured effect on the
-   bundled dictionary is zero.
+   for each rule's measured effect.
 1. **Cluster pass** — the text is grouped into *Khmer Character Clusters* (KCC):
    a base consonant or independent vowel together with any stacked subscripts
    (introduced by COENG, `U+17D2`) and dependent vowels/signs. Working on
@@ -64,27 +68,36 @@ Segmentation runs in three passes:
    splits *inside* an orthographic syllable — the classic bug in naive Khmer
    tokenizers.
 2. **Boundary pass** — a trie keyed on whole clusters is walked to place word
-   boundaries, using one of three [`Strategy`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/strategy.rs) algorithms:
-   - `ForwardMaxMatch` (default) — greedy longest-match, left to right: at
+   boundaries, using one of four [`Strategy`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/strategy.rs) algorithms:
+   - `MinWordsDp` (default since v0.3) — fewest-words dynamic programming
+     over a DAG of every dictionary match: picks the segmentation with the
+     fewest tokens, breaking ties by the most characters covered by
+     dictionary words, then by the longest word. Unlike a greedy walk it
+     can backtrack, so it never commits to a long first word that strands
+     the rest of the run (`ខែកក្កដា` → `ខែ` + `កក្កដា`, where greedy
+     matching produces `ខែក` + debris). Needs no data beyond the
+     dictionary; the most accurate data-free strategy — see
+     [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md).
+   - `ForwardMaxMatch` — greedy longest-match, left to right: at
      each position, consume the longest run of clusters that forms a
-     dictionary word. Falls back to a single cluster when nothing matches.
+     dictionary word. The v0.2 default; fastest, still available.
    - `BiMaxMatch` — also runs backward max-match and picks between them on
      disagreement (fewer tokens wins, then fewer single-cluster tokens);
-     measurably more accurate than the default.
-   - `UnigramDp` — builds a DAG of every dictionary match (not just the
-     longest) and dynamic-programs the highest-probability path using word
+     between the two greedy walks and `MinWordsDp` in accuracy.
+   - `UnigramDp` — the same DAG, dynamic-programmed for the
+     highest-probability path using word
      frequencies you supply via `with_frequencies(...)`. The most accurate
      dictionary strategy by a clear margin — see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md) —
      but needs a frequency table; **none ships with this crate** (see
-     "Dictionary" below for why). Falls back to `ForwardMaxMatch` if none is
+     "Dictionary" below for why). Falls back to `MinWordsDp` if none is
      set.
    - `Tagger` — skips the dictionary entirely: every Khmer run is segmented
      by an averaged-perceptron BMES tagger (`TaggerModel`, the CRF-class
      tier) attached via `with_tagger(...)`. The most accurate mode overall
-     — **F1 0.93 vs 0.78 for the best dictionary configuration** on khPOS
+     — **F1 0.94 vs 0.79 for the best dictionary configuration** on khPOS
      (see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)) — but needs a model you train
      yourself with `TaggerModel::train` on a segmented corpus; **none ships
-     with this crate**. Falls back to `ForwardMaxMatch` if none is set.
+     with this crate**. Falls back to `MinWordsDp` if none is set.
 
    Either way, only runs of Khmer *letters* go to the strategy. Runs of
    non-Khmer text (Latin, ASCII digits, punctuation) become their own
@@ -99,16 +112,21 @@ Segmentation runs in three passes:
    merged across. A dangling `COENG` (`U+17D2`) in truncated or mistyped
    text stays attached to its base and never swallows the character after
    it, so a following space or ZWSP still marks the boundary it should.
-3. **OOV fallback (optional)** — every dictionary strategy above still falls
-   back to one token per cluster when a run matches *nothing* in the
-   dictionary at all. Attaching a model replaces just those unmatched runs
-   with a Viterbi-decoded BMES guess instead, leaving every dictionary hit
-   (including real single-cluster words) untouched. Two model types fit the
-   same seam: an [`HmmModel`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/hmm.rs) via `with_hmm(...)` (cluster-identity
-   emissions; lifts OOV recall ~0.05 absolute), or a
+3. **OOV handling** — when a run of clusters matches *nothing* in the
+   dictionary at all, it is emitted as **one unknown-word token per run**
+   (on by default since v0.3; opt out with `.without_oov_grouping()` for
+   the old one-token-per-cluster behavior). A maximal unmatched run is far
+   more often a single unknown word — a personal name, a transliterated
+   loanword like `កូវីដ` (Covid) — than a string of one-cluster words, and
+   grouping measurably improves both F1 and sentence accuracy (see
+   [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)).
+   Attaching a model upgrades this further: just those unmatched runs are
+   re-segmented with a Viterbi-decoded BMES guess, leaving every dictionary
+   hit (including real single-cluster words) untouched. Two model types fit
+   the same seam: an [`HmmModel`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/hmm.rs) via `with_hmm(...)` (cluster-identity
+   emissions), or a
    [`TaggerModel`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/tagger.rs) via `with_tagger(...)` (context-feature
-   perceptron; a strict upgrade — lifts OOV recall further with no
-   in-vocabulary cost, and is preferred when both are attached; see
+   perceptron; a strict upgrade, and preferred when both are attached; see
    [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)). Both need a model you train yourself;
    none ships with this crate (same reason as `UnigramDp`'s frequencies).
 
@@ -202,7 +220,7 @@ khmer-tokenizer "សួស្តីអ្នកទាំងអស់គ្នា
 khmer-tokenizer --json "ភាសាខ្មែរ"
 # -> ["ភាសា","ខ្មែរ"]
 
-# Bidirectional max-match instead of the default forward max-match
+# Bidirectional max-match instead of the default fewest-words DP (minwords)
 khmer-tokenizer --strategy bimm "សួស្តីអ្នកទាំងអស់គ្នា"
 
 # The stronger tiers, with the data they need (none ships — see "Dictionary"):
@@ -235,7 +253,7 @@ CPython ≥ 3.9, no Python dependencies):
 ```python
 from khmer_tokenizer import KhmerTokenizer, split_kcc, normalize
 
-tk = KhmerTokenizer()  # embedded default dictionary, forward max-match
+tk = KhmerTokenizer()  # embedded default dictionary, fewest-words DP
 tk.segment("សួស្តីអ្នកទាំងអស់គ្នា")
 # ['សួស្តី', 'អ្នក', 'ទាំងអស់គ្នា']
 
@@ -264,7 +282,7 @@ similar-name rule blocks the full name; same engine, same API.)
 ```js
 import { KhmerTokenizer, splitKcc, normalize, isKhmer } from "kh-tokenizer";
 
-const tk = new KhmerTokenizer(); // embedded default dictionary, forward max-match
+const tk = new KhmerTokenizer(); // embedded default dictionary, fewest-words DP
 tk.segment("សួស្តីអ្នកទាំងអស់គ្នា");
 // ["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]
 
@@ -285,12 +303,20 @@ Build the npm package from a checkout with
 
 ## Dictionary
 
-Segmentation quality is bounded by the dictionary. The bundled
-`core/src/dict.txt` has **59,526 words**, sourced from
+Segmentation quality is bounded by the dictionary. The bundled base
+dictionary `core/src/dict.txt` has **59,526 words**, sourced from
 [chamkho](https://github.com/veer66/chamkho)'s `khmerdict.txt`
 (MIT license, copyright SIL NRSI — see [ATTRIBUTION.md](https://github.com/Alujack/khmer-tokenizer/blob/master/core/ATTRIBUTION.md)).
 It's regenerated with `cargo xtask prepare-dict`, which re-downloads and
 re-cleans the source rather than hand-editing the committed file.
+
+On top of it sits `core/src/dict.supplement.txt` — a small,
+**project-authored** wordlist (MIT/Apache-2.0 like the crate) covering
+modern vocabulary the 2015-era base list lacks: province names
+(`បាត់ដំបង`, `ព្រះសីហនុ`), countries, and loanwords (`កូវីដ`, `ហ្វេសប៊ុក`,
+`វីដេអូ`, `អាស៊ាន`). Missing a common word? A one-line pull request to that
+file (with a source showing real-world usage) is the easiest way to
+improve this tokenizer for everyone.
 
 To use your own lexicon instead:
 
@@ -311,12 +337,14 @@ cargo test
 ```
 
 Covers orthographic normalization (marks typed before a subscript, the
-NFC-stranded-mark repair, joiner exemptions, idempotency, byte-length
+NFC-stranded-mark repair, subscript-RO reordering, within-cluster mark
+order, joiner exemptions, idempotency, byte-length
 preservation — see `core/src/normalize.rs`), ZWSP boundary handling, KCC
-splitting (subscripts and vowels stay attached), all three segmentation
-strategies (forward max-match, bidirectional max-match, and unigram DP —
+splitting (subscripts and vowels stay attached), all four segmentation
+strategies (fewest-words DP, forward max-match, bidirectional max-match,
+and unigram DP —
 including a hand-built case where only DP-based scoring can reach the
-correct segmentation), the HMM OOV fallback (a hand-built BMES model that
+correct segmentation), OOV-run grouping, the HMM OOV fallback (a hand-built BMES model that
 resegments an unmatched cluster run while leaving a real dictionary hit
 alone), mixed Khmer/Latin/number input, the out-of-vocabulary fallback, and
 dictionary loading — plus a CI regression guard

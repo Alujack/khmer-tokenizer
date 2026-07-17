@@ -6,8 +6,8 @@
 //! Per the Unicode Khmer syllable structure, a base is followed by, in
 //! order: an optional Robat, the subscript stack (one or more
 //! `COENG`+consonant pairs), an optional shifter, a dependent vowel, then
-//! other signs. Two corruptions of that order are repaired here, both by
-//! rightward rotation (never insertion or deletion):
+//! other signs. Four corruptions of that order are repaired here, all by
+//! character reordering (never insertion or deletion):
 //!
 //! 1. **Mark typed before the subscript stack** — e.g. "សិទិ្ធ" for the
 //!    correct "សិទ្ធិ" (confirmed present in khPOS's own gold corpus:
@@ -23,6 +23,20 @@
 //!    NFC-processing pipeline (very common in web scraping) can produce
 //!    this. The stranded mark is moved past the consonant, converging on
 //!    the same canonical form rule 1 produces.
+//! 3. **Subscript RO typed before another subscript** — Khmer orthography
+//!    puts `COENG`+RO last in a subscript stack, but fonts render both
+//!    orders identically, so real text is full of the swap: `ស្រ្តី` for
+//!    `ស្ត្រី`, `រដ្ឋមន្រ្តី` for `រដ្ឋមន្ត្រី` (338 and 136 occurrences
+//!    respectively in a 4,000-article web-news sample). A
+//!    `COENG RO COENG C` sequence is rotated to `COENG C COENG RO` — the
+//!    same repair SIL's `khnormal` performs.
+//! 4. **Sign typed before a vowel, or vowel before a register shifter** —
+//!    within one cluster the canonical mark order is shifter, then vowel,
+//!    then signs, but e.g. `ាំ` is frequently typed `ំា` (NIKAHIT first)
+//!    because both render identically. Adjacent mark pairs that violate
+//!    the class order (shifter < vowel < sign) are swapped back. Robat and
+//!    the zero-width joiners are never touched, and marks of the same
+//!    class are never reordered relative to each other.
 //!
 //! Robat (`U+17CC`) is excluded from both rules: it's the one mark that's
 //! *supposed* to precede the subscript stack. The zero-width joiners
@@ -38,15 +52,12 @@
 
 use crate::kcc::{is_khmer_base, is_khmer_combining, COENG, ROBAT};
 use crate::trie::KhmerTokenizer;
-use crate::DEFAULT_DICT;
 use std::sync::OnceLock;
 
 static DEFAULT_TOKENIZER: OnceLock<KhmerTokenizer> = OnceLock::new();
 
 fn get_tokenizer() -> &'static KhmerTokenizer {
-    DEFAULT_TOKENIZER.get_or_init(|| {
-        KhmerTokenizer::from_dict_str(DEFAULT_DICT)
-    })
+    DEFAULT_TOKENIZER.get_or_init(KhmerTokenizer::with_default_dict)
 }
 
 /// A mark the reorder rules are allowed to move: a Khmer combining mark
@@ -55,6 +66,25 @@ fn get_tokenizer() -> &'static KhmerTokenizer {
 /// rendering semantics).
 fn is_reorderable_mark(c: char) -> bool {
     is_khmer_combining(c) && c != COENG && c != ROBAT && !matches!(c as u32, 0x200C..=0x200D)
+}
+
+/// `U+179A` KHMER LETTER RO — its subscript form is written last in a
+/// subscript stack (rule 3).
+const RO: char = '\u{179A}';
+
+/// Canonical within-cluster ordering class for rule 4: register shifters
+/// come before dependent vowels, which come before the final signs.
+/// `None` for anything rule 4 must not reorder (bases, `COENG`, Robat, the
+/// deprecated invisible vowels `U+17B4`/`U+17B5`, joiners, non-Khmer).
+fn mark_class(c: char) -> Option<u8> {
+    match c as u32 {
+        0x17C9 | 0x17CA => Some(0),          // register shifters ៉ ៊
+        0x17B6..=0x17C5 => Some(1),          // dependent vowels
+        0x17C6..=0x17C8 => Some(2),          // ំ ះ ៈ
+        0x17CB | 0x17CD..=0x17D1 => Some(2), // ់ ៍ ៎ ៏ ័ ៑ (Robat 17CC excluded)
+        0x17D3 | 0x17DD => Some(2),          // ៓ ៝
+        _ => None,
+    }
 }
 
 /// Canonicalize `text`'s Khmer encoding before segmentation. Idempotent:
@@ -66,8 +96,10 @@ pub fn normalize(text: &str) -> String {
 
     // Fixed point: one rotation can expose a new match (e.g. a mark ahead
     // of two stacked subscripts cascades through both), so repeat until
-    // nothing changes. Both rules only ever move marks rightward, so this
-    // terminates; combining runs are short, so it converges fast.
+    // nothing changes. Every rule only ever moves characters toward their
+    // canonical position (marks rightward, subscript RO rightward, mark
+    // classes into sorted order), so this terminates; combining runs are
+    // short, so it converges fast.
     loop {
         let mut changed = false;
         let mut i = 0;
@@ -88,6 +120,34 @@ pub fn normalize(text: &str) -> String {
                 chars[i + 1..i + 3].rotate_left(1);
                 changed = true;
             }
+            // Rule 3: subscript RO typed before another subscript
+            // (COENG RO COENG C -> COENG C COENG RO). Khmer orthography
+            // writes COENG+RO last in a stack; both orders render the
+            // same, so the swap is a pure encoding repair.
+            else if chars[i] == COENG
+                && chars[i + 1] == RO
+                && chars[i + 2] == COENG
+                && i + 3 < chars.len()
+                && is_khmer_base(chars[i + 3])
+            {
+                chars[i..i + 4].rotate_left(2);
+                changed = true;
+            }
+            i += 1;
+        }
+        // Rule 4: adjacent marks out of canonical class order
+        // (shifter < vowel < sign), e.g. NIKAHIT typed before its vowel
+        // (ំា for ាំ). Same-class pairs are left alone, so each swap
+        // strictly reduces the number of out-of-order pairs and the outer
+        // fixed-point loop terminates.
+        let mut i = 1;
+        while i < chars.len() {
+            if let (Some(a), Some(b)) = (mark_class(chars[i - 1]), mark_class(chars[i])) {
+                if a > b {
+                    chars.swap(i - 1, i);
+                    changed = true;
+                }
+            }
             i += 1;
         }
         if !changed {
@@ -106,10 +166,26 @@ pub fn normalize_full(text: &str) -> String {
     // 1. Combining character reordering (existing rule 1 & rule 2)
     let reordered = normalize(text);
 
-    // 2. Replacements: spelling and orthographic corrections
+    // 2. Replacements: spelling and orthographic corrections.
+    //
+    // Order matters: "ឲ្យ" (the extremely common variant spelling of
+    // "ឱ្យ") must be rewritten *before* bare "ឲ", or the bare-ឲ rule
+    // would turn it into "ឱ្យ្យ" — a double subscript, i.e. corrupted
+    // text, not a correction.
+    //
+    // "េា"/"េី" are two-part-vowel typing errors: a base takes one
+    // dependent vowel, so េ directly followed by ា or ី is never valid —
+    // the typist built ោ (or ើ) out of two keystrokes. Rewriting to the
+    // single canonical code point is the standard repair.
     let normalized = reordered
+        .replace("ឲ្យ", "ឱ្យ")
         .replace("ឲ", "ឱ្យ")
-        .replace("សាស្រ្ត", "សាស្ត្រ")
+        .replace("\u{17C1}\u{17B6}", "\u{17C4}") // េ + ា -> ោ
+        .replace("\u{17C1}\u{17B8}", "\u{17BE}") // េ + ី -> ើ
+        .replace("\u{17A3}", "\u{17A2}") // deprecated ឣ -> អ
+        // NB: សាស្រ្ត -> សាស្ត្រ no longer needs a replacement here —
+        // normalize()'s rule 3 (subscript-RO reordering) repairs it, and
+        // every other word with the same swap, before this point.
         .replace("យូលង់", "យូរលង់")
         .replace("ចរិក", "ចរិត")
         .replace("ប្រភទ", "ប្រភេទ");
@@ -272,6 +348,57 @@ mod tests {
         let once = normalize(nfc_damaged);
         assert_eq!(normalize(&once), once);
         assert_eq!(once.len(), nfc_damaged.len());
+    }
+
+    #[test]
+    fn reorders_subscript_ro_behind_a_following_subscript() {
+        // Rule 3: COENG+RO must be last in a subscript stack.
+        assert_eq!(normalize("ស្រ្តី"), "ស្ត្រី");
+        assert_eq!(normalize("រដ្ឋមន្រ្តី"), "រដ្ឋមន្ត្រី");
+        assert_eq!(normalize("សាស្រ្ត"), "សាស្ត្រ");
+        // Already-canonical RO-last stacks are untouched.
+        assert_eq!(normalize("ស្ត្រី"), "ស្ត្រី");
+        assert_eq!(normalize("ហ្វ្រង្ក"), "ហ្វ្រង្ក");
+    }
+
+    #[test]
+    fn reorders_a_sign_typed_before_its_vowel() {
+        // Rule 4: ាំ typed as ំា (both render identically).
+        let swapped = "ណ\u{17C6}\u{17B6}"; // ណ ំ ា
+        assert_eq!(normalize(swapped), "ណ\u{17B6}\u{17C6}"); // ណាំ
+        // ុំ typed as ំុ.
+        let swapped = "ខ\u{17D2}\u{1789}\u{17C6}\u{17BB}"; // ខ ្ញ ំ ុ
+        assert_eq!(normalize(swapped), "ខ្ញុំ");
+        // A vowel typed before a register shifter is also repaired.
+        let swapped = "ប\u{17B7}\u{17CA}"; // ប ិ ៊
+        assert_eq!(normalize(swapped), "ប\u{17CA}\u{17B7}");
+        // Canonical order (shifter, vowel, sign) is a no-op.
+        assert_eq!(normalize("ប៊ិច"), "ប៊ិច");
+        assert_eq!(normalize("នាំ"), "នាំ");
+    }
+
+    #[test]
+    fn ro_swap_and_sign_order_repairs_preserve_byte_length_and_idempotence() {
+        for s in ["ស្រ្តី", "រដ្ឋមន្រ្តី", "ណ\u{17C6}\u{17B6}"] {
+            let once = normalize(s);
+            assert_eq!(once.len(), s.len(), "byte length changed for {s:?}");
+            assert_eq!(normalize(&once), once, "not idempotent for {s:?}");
+        }
+    }
+
+    #[test]
+    fn normalize_full_does_not_corrupt_the_common_oy_spelling() {
+        // Regression: replace("ឲ", "ឱ្យ") used to turn ឲ្យ into ឱ្យ្យ —
+        // a double subscript, i.e. corrupted text.
+        assert_eq!(normalize_full("ឲ្យ"), "ឱ្យ");
+        assert_eq!(normalize_full("គាត់ឲ្យលុយខ្ញុំ"), "គាត់ឱ្យលុយខ្ញុំ");
+    }
+
+    #[test]
+    fn normalize_full_repairs_two_part_vowel_typing() {
+        // េ + ា typed as two keystrokes for ោ, and េ + ី for ើ.
+        assert_eq!(normalize_full("ក\u{17C1}\u{17B6}ះ"), "កោះ");
+        assert_eq!(normalize_full("គ\u{17C1}\u{17B8}"), "គើ");
     }
 
     #[test]

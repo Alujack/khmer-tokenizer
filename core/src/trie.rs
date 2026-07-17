@@ -49,6 +49,13 @@ pub struct KhmerTokenizer {
     /// `false` by default, meaning [`normalize`](crate::normalize) runs
     /// before every [`segment`](KhmerTokenizer::segment) call (Phase 5).
     normalization_disabled: bool,
+    /// Set by [`without_oov_grouping`](KhmerTokenizer::without_oov_grouping).
+    /// `false` by default, meaning maximal runs of clusters that matched
+    /// nothing in the dictionary are emitted as one token per *run* — the
+    /// shape of an unknown word (a name, a loanword) — rather than one
+    /// token per cluster. Only applies when the dictionary is non-empty
+    /// and no fallback model (tagger/HMM) is attached.
+    oov_grouping_disabled: bool,
 }
 
 impl KhmerTokenizer {
@@ -156,15 +163,47 @@ impl KhmerTokenizer {
         self
     }
 
+    /// Opt out of grouping unmatched (out-of-vocabulary) cluster runs into
+    /// one token per run, restoring the pre-v0.3 behavior of one token per
+    /// cluster. Chains onto any constructor. Grouping is on by default
+    /// because a maximal run the dictionary knows nothing about is far
+    /// more often a single unknown word (a personal name, a transliterated
+    /// loanword like កូវីដ) than a string of one-cluster words — and it
+    /// measurably improves both F1 and sentence accuracy on khPOS (see
+    /// `docs/BENCHMARKS.md`). Attaching a tagger or HMM supersedes
+    /// grouping: those models re-segment the same runs with learned
+    /// boundaries instead.
+    pub fn without_oov_grouping(mut self) -> Self {
+        self.oov_grouping_disabled = true;
+        self
+    }
+
     /// Insert a single word into the dictionary. Surrounding whitespace is
     /// trimmed; empty words are ignored.
+    ///
+    /// The word is inserted under both its raw cluster sequence and its
+    /// [`normalize`](crate::normalize)d one (when they differ), so a
+    /// dictionary entry carrying a known encoding error — e.g. the
+    /// subscript-RO swap in some of the bundled dictionary's own entries —
+    /// still matches input whether or not that input was normalized.
     pub fn insert(&mut self, word: &str) {
         let word = word.trim();
         if word.is_empty() {
             return;
         }
-        let clusters = split_kcc(word);
+        let is_new = self.insert_clusters(split_kcc(word));
+        let normalized = normalize(word);
+        if normalized != word {
+            self.insert_clusters(split_kcc(&normalized));
+        }
+        if is_new {
+            self.word_count += 1;
+        }
+    }
 
+    /// Insert one cluster path into both tries; true if it wasn't already
+    /// a word in the forward trie.
+    fn insert_clusters(&mut self, clusters: Vec<String>) -> bool {
         let mut node = &mut self.root;
         for cl in &clusters {
             node = node.children.entry(cl.clone()).or_default();
@@ -178,9 +217,7 @@ impl KhmerTokenizer {
         }
         rnode.is_word = true;
 
-        if is_new {
-            self.word_count += 1;
-        }
+        is_new
     }
 
     /// Number of distinct words in the dictionary.
@@ -193,8 +230,17 @@ impl KhmerTokenizer {
         self.word_count == 0
     }
 
-    /// True if `word` is an exact entry in the dictionary.
+    /// True if `word` is an exact entry in the dictionary (under either its
+    /// raw or its [`normalize`](crate::normalize)d spelling).
     pub fn contains(&self, word: &str) -> bool {
+        if self.contains_raw(word) {
+            return true;
+        }
+        let normalized = normalize(word);
+        normalized != word && self.contains_raw(&normalized)
+    }
+
+    fn contains_raw(&self, word: &str) -> bool {
         let mut node = &self.root;
         for cl in split_kcc(word) {
             match node.children.get(&cl) {
@@ -221,9 +267,10 @@ impl KhmerTokenizer {
     /// invisible boundary hints — each one is trusted as an authoritative
     /// word boundary and consumed without producing a token. Khmer runs are
     /// segmented using the tokenizer's [`Strategy`] (default
-    /// [`Strategy::ForwardMaxMatch`]: consume the longest run of clusters
-    /// that forms a dictionary word at each position, falling back to a
-    /// single cluster when nothing matches).
+    /// [`Strategy::MinWordsDp`]: the fewest-words path through every
+    /// dictionary match, ties broken by dictionary coverage); maximal runs
+    /// with no dictionary match at all become one unknown-word token each
+    /// (see [`without_oov_grouping`](KhmerTokenizer::without_oov_grouping)).
     pub fn segment(&self, text: &str) -> Vec<String> {
         let owned;
         let text: &str = if self.normalization_disabled {
@@ -295,25 +342,32 @@ impl KhmerTokenizer {
             let full_tagger = matches!(self.strategy, Strategy::Tagger) && self.tagger.is_some();
             let run_tokens = match self.strategy {
                 Strategy::ForwardMaxMatch => forward_match(run, &self.root),
+                Strategy::MinWordsDp => min_words_dp(run, &self.root),
                 Strategy::BiMaxMatch => bimm(run, &self.root, &self.rev_root),
                 Strategy::UnigramDp if self.freq_total > 0 => {
                     unigram_dp(run, &self.root, &self.freq_counts, self.freq_total)
                 }
-                Strategy::UnigramDp => forward_match(run, &self.root),
+                Strategy::UnigramDp => min_words_dp(run, &self.root),
                 Strategy::Tagger => match &self.tagger {
                     Some(model) => model.segment_clusters(run),
-                    None => forward_match(run, &self.root),
+                    None => min_words_dp(run, &self.root),
                 },
             };
             // OOV fallback for dictionary strategies: tagger preferred over
-            // HMM. Under a full-tagger segmentation there is no "unmatched"
-            // notion — the tagger's boundaries are final, so no fallback.
+            // HMM, then run-grouping (on by default). Under a full-tagger
+            // segmentation there is no "unmatched" notion — the tagger's
+            // boundaries are final, so no fallback.
             let run_tokens = if full_tagger {
                 run_tokens
             } else if let Some(model) = &self.tagger {
                 apply_oov_fallback(run_tokens, &self.root, |cs| model.segment_clusters(cs))
             } else if let Some(model) = &self.hmm {
                 apply_oov_fallback(run_tokens, &self.root, |cs| model.segment_oov(cs))
+            } else if !self.oov_grouping_disabled && !self.is_empty() {
+                // No model: a maximal unmatched run is far more often one
+                // unknown word (name, loanword) than a string of
+                // one-cluster words — emit it as a single token.
+                apply_oov_fallback(run_tokens, &self.root, |cs| vec![cs.to_vec()])
             } else {
                 run_tokens
             };
@@ -412,6 +466,84 @@ fn bimm(clusters: &[String], root: &TrieNode, rev_root: &TrieNode) -> Vec<Vec<St
     } else {
         bwd
     }
+}
+
+/// Fewest-words dynamic programming ([`Strategy::MinWordsDp`], the default
+/// since v0.3.0): finds the path through the dictionary-match DAG with the
+/// fewest tokens, breaking ties by the most characters covered by
+/// dictionary words, then by the longest word at the current position.
+/// Needs no frequency data, and unlike the greedy walks it can represent
+/// paths neither forward nor backward max-match can produce (e.g. ខែកក្កដា
+/// as ខែ + កក្កដា where greedy FMM commits to the dictionary word ខែក and
+/// strands ក្កដា).
+///
+/// Every position also carries a single-cluster fallback edge — even where
+/// dictionary words match — so an unknown word can start anywhere without
+/// forcing a spurious dictionary match around it.
+fn min_words_dp(clusters: &[String], root: &TrieNode) -> Vec<Vec<String>> {
+    let n = clusters.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    // dag[k]: end positions of every dictionary word starting at cluster k.
+    let mut dag: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (k, edges) in dag.iter_mut().enumerate() {
+        let mut node = root;
+        let mut j = k;
+        while j < n {
+            match node.children.get(&clusters[j]) {
+                Some(next) => {
+                    node = next;
+                    j += 1;
+                    if node.is_word {
+                        edges.push(j);
+                    }
+                }
+                None => break,
+            }
+        }
+    }
+
+    // Right-to-left DP. best[k] = (tokens, dict chars covered) of the best
+    // path from k to the end; lower tokens wins, then higher coverage.
+    // Candidates are visited longest-dictionary-word first with fallback
+    // last, and only a strict improvement replaces the incumbent, so full
+    // ties resolve to the longest word at the current position (matching
+    // greedy max-match's preference).
+    let mut best: Vec<(usize, usize)> = vec![(usize::MAX, 0); n + 1];
+    let mut best_end = vec![0usize; n];
+    best[n] = (0, 0);
+    for k in (0..n).rev() {
+        let dict_edges = dag[k].iter().rev().map(|&j| (j, true));
+        for (j, is_dict) in dict_edges.chain([(k + 1, false)]) {
+            let (tokens, covered) = best[j];
+            if tokens == usize::MAX {
+                continue;
+            }
+            let word_chars: usize = if is_dict {
+                clusters[k..j].iter().map(|cl| cl.chars().count()).sum()
+            } else {
+                0
+            };
+            let cand = (tokens + 1, covered + word_chars);
+            let cur = best[k];
+            if cand.0 < cur.0 || (cand.0 == cur.0 && cand.1 > cur.1) {
+                best[k] = cand;
+                best_end[k] = j;
+            }
+        }
+    }
+
+    // Reconstruct left to right.
+    let mut tokens = Vec::new();
+    let mut k = 0;
+    while k < n {
+        let j = best_end[k];
+        tokens.push(clusters[k..j].to_vec());
+        k = j;
+    }
+    tokens
 }
 
 /// Unigram max-probability path (jieba-style). Builds a DAG where `dag[k]`
@@ -627,10 +759,12 @@ mod tests {
         use std::collections::HashMap;
 
         // "ក" is a real dictionary word; "ខ", "គ", "ង" are not, so with no
-        // HMM attached forward-max-match would emit ["ក", "ខ", "គ", "ង"] —
-        // one cluster per token for the whole unmatched tail.
+        // HMM attached the unmatched tail is grouped into one OOV token
+        // (or, with grouping disabled, one token per cluster).
         let tk = KhmerTokenizer::from_words(["ក"]);
-        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខ", "គ", "ង"]);
+        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខគង"]);
+        let ungrouped = KhmerTokenizer::from_words(["ក"]).without_oov_grouping();
+        assert_eq!(ungrouped.segment("កខគង"), vec!["ក", "ខ", "គ", "ង"]);
 
         // Craft an HMM that decisively resegments an unmatched ["ខ","គ","ង"]
         // run into ["ខគ", "ង"] (Begin, End, Single) instead of 3 loose
@@ -664,9 +798,9 @@ mod tests {
         );
 
         // "ក" is a real dictionary word; the ["ខ","គ","ង"] tail matches
-        // nothing, so without a model it degrades to one token per cluster.
+        // nothing, so without a model it groups into one OOV token.
         let tk = KhmerTokenizer::from_words(["ក"]);
-        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខ", "គ", "ង"]);
+        assert_eq!(tk.segment("កខគង"), vec!["ក", "ខគង"]);
 
         // With the tagger attached, the dictionary hit is untouched and
         // only the unmatched tail is re-segmented by the learned tags.
@@ -778,6 +912,59 @@ mod tests {
         let tk = KhmerTokenizer::from_words(["ខ្មែរ"]);
         assert_eq!(tk.segment("\u{FEFF}ខ្មែរ"), vec!["ខ្មែរ"]);
         assert_eq!(tk.segment("\u{FEFF}hello"), vec!["hello"]);
+    }
+
+    #[test]
+    fn min_words_dp_recovers_from_a_greedy_dead_end() {
+        // Greedy FMM at ខែកក្កដា ("month of July") takes the dictionary
+        // word ខែក, stranding ក្កដា; the fewest-words DP backtracks and
+        // finds ខែ + កក្កដា (2 words). This exact case fails with the real
+        // bundled dictionary under FMM.
+        let tk = KhmerTokenizer::with_default_dict();
+        let tokens = tk.segment("ថ្ងៃទី១៥ខែកក្កដា");
+        assert!(
+            tokens.contains(&"កក្កដា".to_string()),
+            "expected កក្កដា as one token, got {tokens:?}"
+        );
+
+        // The same trap in minimal form: greedy takes ខែក (the longest
+        // match at position 0) and can never reconsider; the DP prefers
+        // the 2-word path over ខែក plus two stranded fallback clusters.
+        let tk = KhmerTokenizer::from_words(["ខែក", "ខែ", "កក្កដា"]);
+        assert_eq!(tk.segment("ខែកក្កដា"), vec!["ខែ", "កក្កដា"]);
+    }
+
+    #[test]
+    fn oov_loanwords_stay_whole_instead_of_shattering() {
+        // កូវីដ (Covid) is absent from this small dictionary; it must come
+        // out as one unknown-word token, not ក|វី|ដ cluster confetti.
+        let tk = KhmerTokenizer::from_words(["ជំងឺ", "នៅ", "កម្ពុជា"]);
+        assert_eq!(
+            tk.segment("ជំងឺកូវីដនៅកម្ពុជា"),
+            vec!["ជំងឺ", "កូវីដ", "នៅ", "កម្ពុជា"]
+        );
+    }
+
+    #[test]
+    fn subscript_ro_swap_matches_the_canonical_dictionary_entry() {
+        // ស្រ្តី (subscript RO typed before subscript TA — 136 hits in a
+        // 4,000-article web sample) must match the canonical entry ស្ត្រី.
+        let tk = KhmerTokenizer::from_words(["ស្ត្រី"]);
+        assert_eq!(tk.segment("ស្រ្តី"), vec!["ស្ត្រី"]);
+        // And the reverse: a dictionary that (like 99 entries of the
+        // bundled one) carries the swapped spelling still matches
+        // canonical input, because insert() indexes both cluster paths.
+        let tk = KhmerTokenizer::from_words(["ស្រ្តី"]);
+        assert_eq!(tk.segment("ស្ត្រី"), vec!["ស្ត្រី"]);
+    }
+
+    #[test]
+    fn nikahit_typed_before_its_vowel_still_matches() {
+        // ាំ typed as ំា (NIKAHIT first) renders identically and is
+        // everywhere in real text; normalize rule 4 repairs it.
+        let tk = KhmerTokenizer::from_words(["ឆ្នាំ"]);
+        let swapped = "ឆ\u{17D2}ន\u{17C6}\u{17B6}"; // ឆ ្ន ំ ា
+        assert_eq!(tk.segment(swapped), vec!["ឆ្នាំ"]);
     }
 
     #[test]

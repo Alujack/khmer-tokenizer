@@ -37,6 +37,21 @@ chamkho ships that file under its own dedicated license file,
 (`xtask/src/dict.rs`): trimmed, deduplicated, comments/blank lines dropped —
 no words added, removed, or edited.
 
+## Supplemental wordlist — `core/src/dict.supplement.txt`
+
+A small **project-authored** wordlist (40 entries as of v0.3), licensed
+MIT OR Apache-2.0 like the crate itself, loaded by
+`KhmerTokenizer::with_default_dict()` alongside the base dictionary. It
+covers modern vocabulary the 2015-era base list lacks: Cambodian province
+names, countries, and transliterated loanwords (technology, health, news).
+
+Provenance: candidate words were *ranked* by how often they appeared as
+out-of-vocabulary tokens in public Khmer web-news text, then each entry was
+confirmed absent from `dict.txt` and hand-verified for correct spelling
+before inclusion. The list is original curation — no third-party wordlist
+or corpus text is reproduced in it. Unlike `dict.txt`, it *is* meant to be
+hand-edited: additions welcome via pull request.
+
 ## Not currently bundled
 
 `khopilot/khmer-lexicon` (CC BY 4.0, 12,653 terms + word frequencies) was

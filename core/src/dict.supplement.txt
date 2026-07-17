@@ -1,0 +1,62 @@
+# Supplemental Khmer dictionary for khmer-tokenizer-core.
+#
+# Project-authored wordlist (MIT OR Apache-2.0, same as the crate) covering
+# modern vocabulary absent from the bundled chamkho/SIL base dictionary
+# (`dict.txt`, frozen 2015): province names, countries, loanwords, and
+# technology terms. Every entry was confirmed missing from `dict.txt` and
+# hand-verified against real-world usage before inclusion — candidates were
+# *ranked* by frequency of appearance in public Khmer web-news text, but the
+# list itself is original curation, not an extract of any corpus.
+#
+# One word per line. Blank lines and lines starting with '#' are ignored.
+# See core/ATTRIBUTION.md ("Supplemental wordlist").
+
+# --- Cambodian provinces / places missing from the base dictionary ---
+បាត់ដំបង
+បន្ទាយមានជ័យ
+ព្រះសីហនុ
+
+# --- Countries / geography ---
+ឥណ្ឌូនេស៊ី
+ម៉ិកស៊ិក
+សាអូឌីត
+អាម៉េរិក
+
+# --- Health ---
+កូវីដ
+វីរុស
+
+# --- Technology / internet ---
+ហ្វេសប៊ុក
+យូធូប
+អ៊ីនស្តាក្រាម
+គូគល
+ហ្គូហ្គល
+អ៊ីមែល
+វេបសាយ
+ឌីជីថល
+អនឡាញ
+ស្មាតហ្វូន
+អាយហ្វូន
+សូហ្វវែរ
+វីដេអូ
+កាមេរ៉ា
+អេឡិចត្រូនិក
+ព័ត៌មានវិទ្យា
+
+# --- News / politics / economy / sport ---
+អាស៊ាន
+មីស៊ីល
+នុយក្លេអ៊ែរ
+អាស៊ីត
+កាស៊ីណូ
+ស៊ីហ្គេម
+វិនិយោគិន
+កីឡាការិនី
+កងរាជអាវុធហត្ថ
+ជនសង្ស័យ
+កង់បី
+មីក្រូហិរញ្ញវត្ថុ
+អចលនទ្រព្យ
+អចលន
+ព្រលានយន្តហោះ

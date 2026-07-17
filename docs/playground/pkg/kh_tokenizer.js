@@ -28,9 +28,12 @@ export class KhmerTokenizer {
      * Options (all optional, matching the Python constructor):
      * - `words: string[]` — custom word list instead of the embedded
      *   default dictionary
-     * - `strategy: "fmm" | "bimm" | "unigram"` — segmentation strategy
+     * - `strategy: "minwords" | "fmm" | "bimm" | "unigram" | "tagger"` —
+     *   segmentation strategy (default "minwords")
      * - `frequencies: Record<string, number>` — word counts for `"unigram"`
      * - `normalization: boolean` — orthographic normalization (default true)
+     * - `oovGrouping: boolean` — group unmatched cluster runs into one
+     *   unknown-word token each (default true)
      * @param {object | null} [options]
      */
     constructor(options) {

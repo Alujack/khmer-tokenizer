@@ -53,17 +53,20 @@ fn run_eval() {
         std::process::exit(1);
     });
 
-    // These rows opt out of Phase 5's normalization pass (on by default as
-    // of this phase) so they keep reproducing their exact historical
-    // Phase 1-4 numbers in docs/BENCHMARKS.md. Normalization's own
-    // contribution is isolated separately, at the end of this function.
+    // These rows opt out of Phase 5's normalization pass and v0.3's OOV
+    // grouping (both on by default) so they keep reproducing their
+    // historical Phase 1-4 numbers in docs/BENCHMARKS.md (modulo the small
+    // v0.3 dictionary supplement, which they do include). Each new pass's
+    // own contribution is isolated separately, at the end of this function.
     for (label, strategy) in [
         ("ForwardMaxMatch", Strategy::ForwardMaxMatch),
         ("BiMaxMatch", Strategy::BiMaxMatch),
+        ("MinWordsDp", Strategy::MinWordsDp),
     ] {
         let tokenizer = KhmerTokenizer::with_default_dict()
             .with_strategy(strategy)
-            .without_normalization();
+            .without_normalization()
+            .without_oov_grouping();
         let metrics = evaluate(&examples, &tokenizer);
         report::print_table(label, &metrics);
     }
@@ -81,7 +84,8 @@ fn run_eval() {
     let tokenizer = KhmerTokenizer::with_default_dict()
         .with_strategy(Strategy::UnigramDp)
         .with_frequencies(freqs.clone())
-        .without_normalization();
+        .without_normalization()
+        .without_oov_grouping();
     let metrics = evaluate(&examples, &tokenizer);
     report::print_table("UnigramDp (freq: khPOS train, local-only)", &metrics);
 
@@ -139,7 +143,9 @@ fn run_eval() {
     // Isolate its contribution on top of the weakest and strongest
     // configurations above by comparing against their without_normalization()
     // numbers just printed.
-    let tokenizer = KhmerTokenizer::with_default_dict().with_strategy(Strategy::ForwardMaxMatch);
+    let tokenizer = KhmerTokenizer::with_default_dict()
+        .with_strategy(Strategy::ForwardMaxMatch)
+        .without_oov_grouping();
     let metrics = evaluate(&examples, &tokenizer);
     report::print_table("ForwardMaxMatch + Normalization", &metrics);
 
@@ -152,6 +158,14 @@ fn run_eval() {
         "UnigramDp + HMM + Normalization (khPOS train, local-only)",
         &metrics,
     );
+
+    // v0.3's out-of-the-box configuration: MinWordsDp + OOV-run grouping +
+    // normalization + the dictionary supplement — exactly what
+    // `KhmerTokenizer::with_default_dict()` gives a new user with no data
+    // of their own.
+    let tokenizer = KhmerTokenizer::with_default_dict();
+    let metrics = evaluate(&examples, &tokenizer);
+    report::print_table("MinWordsDp + OOV grouping + Normalization (v0.3 default)", &metrics);
 }
 
 /// `kh_data_10000b` isn't auto-downloaded like khPOS/chamkho — its source

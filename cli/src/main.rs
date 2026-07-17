@@ -33,7 +33,7 @@ use khmer_tokenizer_core::{KhmerTokenizer, Strategy, TaggerModel};
 fn main() {
     let mut json = false;
     let mut zwsp = false;
-    let mut strategy = Strategy::ForwardMaxMatch;
+    let mut strategy = Strategy::default();
     let mut dict_path: Option<String> = None;
     let mut freq_path: Option<String> = None;
     let mut tagger_path: Option<String> = None;
@@ -51,13 +51,14 @@ fn main() {
             }
             "--strategy" | "-s" => {
                 strategy = match value_for(&args, &mut i, "--strategy").as_str() {
+                    "minwords" => Strategy::MinWordsDp,
                     "fmm" => Strategy::ForwardMaxMatch,
                     "bimm" => Strategy::BiMaxMatch,
                     "unigram" => Strategy::UnigramDp,
                     "tagger" => Strategy::Tagger,
                     other => {
                         fail(&format!(
-                            "unknown strategy '{other}' (expected fmm, bimm, unigram, or tagger)"
+                            "unknown strategy '{other}' (expected minwords, fmm, bimm, unigram, or tagger)"
                         ));
                     }
                 };
@@ -121,7 +122,7 @@ fn build_tokenizer(
     } else if strategy == Strategy::UnigramDp {
         eprintln!(
             "warning: --strategy unigram needs a --freq table to score paths; \
-             falling back to forward max-match"
+             falling back to minwords"
         );
     }
 
@@ -133,7 +134,7 @@ fn build_tokenizer(
     } else if strategy == Strategy::Tagger {
         eprintln!(
             "warning: --strategy tagger needs a --tagger model file; \
-             falling back to forward max-match"
+             falling back to minwords"
         );
     }
 
@@ -217,8 +218,8 @@ fn print_help() {
     println!("  -j, --json             Output a JSON array of tokens per line");
     println!("  -z, --zwsp             Join tokens with U+200B ZERO WIDTH SPACE (the");
     println!("                         Unicode-recommended Khmer word-boundary marker)");
-    println!("  -s, --strategy <NAME>  Segmentation strategy: fmm (default), bimm,");
-    println!("                         unigram (needs --freq), or tagger (needs --tagger)");
+    println!("  -s, --strategy <NAME>  Segmentation strategy: minwords (default), fmm,");
+    println!("                         bimm, unigram (needs --freq), or tagger (needs --tagger)");
     println!("  -d, --dict <FILE>      Use a custom dictionary (one word per line;");
     println!("                         '#' comments and blank lines ignored)");
     println!("  -f, --freq <FILE>      Word-frequency table for unigram scoring");

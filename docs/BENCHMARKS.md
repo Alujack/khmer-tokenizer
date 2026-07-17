@@ -21,6 +21,11 @@ with a fully correct token sequence).
 | 2026-07-02 | UnigramDp + HMM | chamkho khmerdict.txt + khPOS-train freqs + BMES counts | 0.7611 | 0.8010 | 0.7805 | 0.8752 | 0.4014 | 0.3900   | khPOS OPEN-TEST |
 | 2026-07-02 | ForwardMaxMatch + Normalization | chamkho khmerdict.txt (59,526 words) | 0.7026 | 0.7417 | 0.7216 | 0.8144 | 0.3505 | 0.3650   | khPOS OPEN-TEST |
 | 2026-07-02 | UnigramDp + HMM + Normalization | chamkho khmerdict.txt + khPOS-train freqs + BMES counts | 0.7611 | 0.8010 | 0.7805 | 0.8752 | 0.4014 | 0.3900   | khPOS OPEN-TEST |
+| 2026-07-17 | ForwardMaxMatch | chamkho + supplement (59,566 words)       | 0.7277 | 0.7559 | 0.7415 | 0.8156 | 0.4273 | 0.3690   | khPOS OPEN-TEST |
+| 2026-07-17 | BiMaxMatch      | chamkho + supplement (59,566 words)       | 0.7330 | 0.7597 | 0.7461 | 0.8201 | 0.4273 | 0.3690   | khPOS OPEN-TEST |
+| 2026-07-17 | MinWordsDp      | chamkho + supplement (59,566 words)       | 0.7337 | 0.7603 | 0.7467 | 0.8207 | 0.4273 | 0.3710   | khPOS OPEN-TEST |
+| 2026-07-17 | **MinWordsDp + OOV grouping + Normalization (v0.3 default)** | chamkho + supplement (59,566 words) | 0.7403 | 0.7620 | **0.7510** | 0.8211 | 0.4369 | **0.3800** | khPOS OPEN-TEST |
+| 2026-07-17 | UnigramDp + HMM + Normalization | chamkho + supplement + khPOS-train freqs + BMES counts | 0.7730 | 0.8090 | 0.7906 | 0.8762 | 0.4387 | 0.3920   | khPOS OPEN-TEST |
 
 ## Reading Phase 1's baseline (~100-word seed dict)
 
@@ -404,3 +409,64 @@ historical snapshots of what each phase measured at the time.
 > pre-hardening code; they will shift (in the same direction) when re-run,
 > since that corpus is dense with digits and punctuation. Not re-measured
 > in this pass.
+
+## v0.3: MinWordsDp default, OOV-run grouping, normalization rules 3–4, dictionary supplement
+
+Four changes landed together (2026-07-17), all data-free — nothing new is
+trained or bundled beyond a 40-word project-authored wordlist:
+
+1. **`Strategy::MinWordsDp`, the new default** — fewest-words dynamic
+   programming over the match DAG (the *maximal matching* of the Thai/Khmer
+   literature), ties broken by dictionary-covered characters, then by
+   longest word. Unlike greedy FMM it can backtrack: ខែកក្កដា now segments
+   as ខែ + កក្កដា instead of ខែក + two stranded clusters.
+2. **OOV-run grouping (on by default,
+   `without_oov_grouping()` to opt out)** — a maximal run of clusters the
+   dictionary knows nothing about is emitted as *one* unknown-word token
+   (the shape of a name or loanword: កូវីដ, ហ្វេសប៊ុក) instead of one token
+   per cluster. Attached tagger/HMM models supersede it.
+3. **Normalization rules 3–4** — subscript-RO order (ស្រ្តី → ស្ត្រី,
+   រដ្ឋមន្រ្តី → រដ្ឋមន្ត្រី; 474 combined occurrences in a 4,000-article
+   web-news sample) and within-cluster mark order (ំា → ាំ). Both
+   byte-length-preserving, like rules 1–2. `insert()` now also indexes each
+   dictionary word under its normalized cluster path, so the 99 bundled
+   entries that themselves carry the RO swap keep matching from both sides.
+4. **Dictionary supplement** (`core/src/dict.supplement.txt`, MIT/Apache
+   like the crate): 40 hand-verified modern words the 2015 base list lacks —
+   province names (បាត់ដំបង, បន្ទាយមានជ័យ, ព្រះសីហនុ), countries, loanwords
+   (កូវីដ, ហ្វេសប៊ុក, វីដេអូ, អាស៊ាន). See `core/ATTRIBUTION.md`.
+
+Also fixed in this pass: `normalize_full` corrupted the extremely common
+spelling ឲ្យ into ឱ្យ្យ (double subscript) because the bare-ឲ replacement
+ran first — ordering is now correct, with regression tests.
+
+**Measured on khPOS OPEN-TEST** (1,000 sentences; strategy rows without
+normalization/grouping to isolate the algorithm change):
+
+| Configuration | P | R | F1 | R-iv | R-oov | WordAcc |
+|---|---|---|---|---|---|---|
+| ForwardMaxMatch (v0.2 default algo) | 0.7277 | 0.7559 | 0.7415 | 0.8156 | 0.4273 | 0.3690 |
+| BiMaxMatch                          | 0.7330 | 0.7597 | 0.7461 | 0.8201 | 0.4273 | 0.3690 |
+| MinWordsDp                          | 0.7337 | 0.7603 | **0.7467** | 0.8207 | 0.4273 | 0.3710 |
+| ForwardMaxMatch + Normalization (v0.2 out-of-box) | 0.7298 | 0.7564 | 0.7428 | 0.8161 | 0.4273 | 0.3690 |
+| **MinWordsDp + grouping + Normalization (v0.3 out-of-box)** | 0.7403 | 0.7620 | **0.7510** | 0.8211 | 0.4369 | **0.3800** |
+| UnigramDp + HMM + Normalization (best hybrid) | 0.7730 | 0.8090 | **0.7906** | 0.8762 | 0.4387 | 0.3920 |
+
+Reading it:
+
+- **Out-of-the-box F1 0.7428 → 0.7510 and word accuracy 0.3690 → 0.3800**,
+  with zero new bundled data. MinWordsDp alone beats both greedy walks
+  (0.7467 vs 0.7415/0.7461) — the DAG can represent paths neither greedy
+  direction can produce, which is the same reason UnigramDp wins when
+  frequencies exist.
+- **`UnigramDp` and `Strategy::Tagger` without their data now fall back to
+  MinWordsDp** instead of FMM — the silent-fallback path quietly got
+  better too.
+- **The best hybrid also moved, 0.7870 → 0.7906**: rules 3–4 repair
+  encoding variants the khPOS gold itself contains, and the supplement
+  words remove a few spurious OOV runs.
+- **khPOS understates the OOV-grouping win.** Its news text is from 2017 —
+  no កូវីដ, no ហ្វេសប៊ុក. On modern web text the difference between
+  ក|វី|ដ confetti and a single កូវីដ token is the difference between
+  unusable and correct pre-tokenization for downstream (e.g. SentencePiece)
+  training.

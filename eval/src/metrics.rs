@@ -130,9 +130,10 @@ mod tests {
     #[test]
     fn oov_word_fragments_and_hurts_precision_and_recall() {
         // "ខ្មែរ" is missing from the dictionary and splits into 2 KCC
-        // clusters, so it falls back to 2 single-cluster tokens instead of
-        // the 1 gold token — an over-segmentation error.
-        let tk = KhmerTokenizer::from_words(["សួស្តី"]);
+        // clusters. OOV grouping (the default) would recover it whole, so
+        // disable it here to manufacture the over-segmentation error this
+        // test scores: 2 single-cluster tokens instead of the 1 gold token.
+        let tk = KhmerTokenizer::from_words(["សួស្តី"]).without_oov_grouping();
         let examples = vec![example("សួស្តីខ្មែរ", &["សួស្តី", "ខ្មែរ"])];
         let m = evaluate(&examples, &tk);
         assert_eq!(m.precision, 1.0 / 3.0);
@@ -157,7 +158,9 @@ mod tests {
 
     #[test]
     fn word_accuracy_averages_across_sentences() {
-        let tk = KhmerTokenizer::from_words(["សួស្តី", "អ្នក"]);
+        // Grouping is disabled so the OOV sentence stays a genuine miss —
+        // the point here is the averaging, not the segmentation.
+        let tk = KhmerTokenizer::from_words(["សួស្តី", "អ្នក"]).without_oov_grouping();
         let examples = vec![
             example("សួស្តីអ្នក", &["សួស្តី", "អ្នក"]), // exact
             example("សួស្តីខ្មែរ", &["សួស្តី", "ខ្មែរ"]),   // not exact (ខ្មែរ is OOV)

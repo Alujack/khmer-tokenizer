@@ -10,8 +10,10 @@
 //!    segmenter from ever splitting *inside* an orthographic syllable.
 //! 2. **Boundary pass** — [`KhmerTokenizer`] walks a cluster-keyed trie to
 //!    place word boundaries, using one of a few [`Strategy`] algorithms
-//!    (default: greedy longest-match, falling back to a single cluster when
-//!    nothing matches).
+//!    (default: [`Strategy::MinWordsDp`], the fewest-words dynamic program;
+//!    maximal runs the dictionary doesn't know at all are emitted as one
+//!    unknown-word token per run — see
+//!    [`KhmerTokenizer::without_oov_grouping`]).
 //!
 //! The engine is `std`-only (no external dependencies) and deterministic.
 //!
@@ -38,17 +40,35 @@ pub use strategy::Strategy;
 pub use tagger::TaggerModel;
 pub use trie::KhmerTokenizer;
 
-/// The embedded default dictionary (59,526 words; see `ATTRIBUTION.md`): one
-/// word per line; blank lines and lines starting with `#` are ignored.
-/// Replace or extend it for your own use case — see the dictionary notes in
-/// the project README.
+/// The embedded base dictionary (59,526 words sourced from chamkho's
+/// khmerdict.txt; see `ATTRIBUTION.md`): one word per line; blank lines and
+/// lines starting with `#` are ignored. Replace or extend it for your own
+/// use case — see the dictionary notes in the project README.
 pub const DEFAULT_DICT: &str = include_str!("dict.txt");
 
+/// A small project-authored supplement to [`DEFAULT_DICT`] (MIT/Apache-2.0,
+/// like the crate): modern vocabulary the 2015-era base list lacks —
+/// province names (បាត់ដំបង), countries, loanwords, and technology terms
+/// (កូវីដ, ហ្វេសប៊ុក). Loaded by
+/// [`KhmerTokenizer::with_default_dict`] alongside the base dictionary.
+/// See `ATTRIBUTION.md` §"Supplemental wordlist".
+pub const SUPPLEMENTAL_DICT: &str = include_str!("dict.supplement.txt");
+
 impl KhmerTokenizer {
-    /// Build a tokenizer pre-loaded with the embedded default dictionary
-    /// ([`DEFAULT_DICT`]).
+    /// Build a tokenizer pre-loaded with the embedded default dictionary:
+    /// the chamkho-derived base list ([`DEFAULT_DICT`]) plus the
+    /// project-authored modern-vocabulary supplement
+    /// ([`SUPPLEMENTAL_DICT`]).
     pub fn with_default_dict() -> Self {
-        Self::from_dict_str(DEFAULT_DICT)
+        let mut tk = Self::from_dict_str(DEFAULT_DICT);
+        for word in SUPPLEMENTAL_DICT
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        {
+            tk.insert(word);
+        }
+        tk
     }
 
     /// Build a tokenizer from a newline-separated word list. Blank lines and
@@ -102,9 +122,17 @@ mod tests {
     }
 
     #[test]
-    fn oov_falls_back_to_clusters() {
-        // ឆ្នាំ and ថ្មី are absent from this dictionary -> single clusters.
-        assert_eq!(tk().segment("ឆ្នាំថ្មី"), vec!["ឆ្នាំ", "ថ្មី"]);
+    fn oov_runs_group_into_one_token_by_default() {
+        // ឆ្នាំ and ថ្មី are absent from this dictionary, so the whole
+        // unmatched run is emitted as one token — the shape of an unknown
+        // word — rather than shattered into clusters.
+        assert_eq!(tk().segment("ឆ្នាំថ្មី"), vec!["ឆ្នាំថ្មី"]);
+    }
+
+    #[test]
+    fn oov_falls_back_to_clusters_when_grouping_is_disabled() {
+        let tk = tk().without_oov_grouping();
+        assert_eq!(tk.segment("ឆ្នាំថ្មី"), vec!["ឆ្នាំ", "ថ្មី"]);
     }
 
     #[test]
@@ -114,6 +142,26 @@ mod tests {
         assert_eq!(
             tk.segment("សួស្តីអ្នកទាំងអស់គ្នា"),
             vec!["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]
+        );
+    }
+
+    #[test]
+    fn supplemental_dict_covers_modern_vocabulary() {
+        let tk = KhmerTokenizer::with_default_dict();
+        // Every supplement entry is a real dictionary word...
+        for word in SUPPLEMENTAL_DICT
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        {
+            assert!(tk.contains(word), "supplement word missing: {word}");
+        }
+        // ...and the headline cases segment whole instead of shattering.
+        assert_eq!(tk.segment("ជំងឺកូវីដ"), vec!["ជំងឺ", "កូវីដ"]);
+        assert_eq!(tk.segment("ខេត្តបាត់ដំបង"), vec!["ខេត្ត", "បាត់ដំបង"]);
+        assert_eq!(
+            tk.segment("ហ្វេសប៊ុកនិងយូធូប"),
+            vec!["ហ្វេសប៊ុក", "និង", "យូធូប"]
         );
     }
 

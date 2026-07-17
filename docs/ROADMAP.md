@@ -330,9 +330,14 @@ khmerTokenizer/
    Recommendation: khPOS first, add ALT in Phase 3 once the harness is proven.
 3. **Default strategy after Phase 3:** keep `ForwardMaxMatch` as default for
    determinism/speed, or promote `UnigramDp` once it wins? Decide on the
-   numbers. **Still open:** BiMM's numbers are in (a small win — see
-   `BENCHMARKS.md`) but not enough to justify switching the default off FMM by
-   itself; revisit once `UnigramDp` exists and all three can be compared.
+   numbers. **Resolved in v0.3:** the default is now `MinWordsDp` —
+   fewest-words DP, equally deterministic and data-free, and measurably
+   better than both FMM and BiMM on khPOS (see `BENCHMARKS.md` §v0.3). It
+   also became the fallback for `UnigramDp`/`Tagger` when their data is
+   missing. v0.3 additionally turned on OOV-run grouping by default, added
+   normalization rules 3–4 (subscript-RO order, within-cluster mark order),
+   and introduced a project-authored dictionary supplement
+   (`core/src/dict.supplement.txt`).
 4. **License posture:** confirm we will *only* bundle CC BY / MIT-class data and
    keep all NC / ShareAlike corpora download-only. (Recommended — protects the
    MIT/Apache licensing of the project.)

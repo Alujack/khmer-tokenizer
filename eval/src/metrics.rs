@@ -162,8 +162,8 @@ mod tests {
         // the point here is the averaging, not the segmentation.
         let tk = KhmerTokenizer::from_words(["សួស្តី", "អ្នក"]).without_oov_grouping();
         let examples = vec![
-            example("សួស្តីអ្នក", &["សួស្តី", "អ្នក"]), // exact
-            example("សួស្តីខ្មែរ", &["សួស្តី", "ខ្មែរ"]),   // not exact (ខ្មែរ is OOV)
+            example("សួស្តីអ្នក", &["សួស្តី", "អ្នក"]),   // exact
+            example("សួស្តីខ្មែរ", &["សួស្តី", "ខ្មែរ"]), // not exact (ខ្មែរ is OOV)
         ];
         let m = evaluate(&examples, &tk);
         assert_eq!(m.sentences, 2);

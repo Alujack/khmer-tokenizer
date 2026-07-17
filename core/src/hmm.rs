@@ -8,11 +8,7 @@
 
 use std::collections::HashMap;
 
-const NUM_STATES: usize = 4;
-const BEGIN: usize = 0;
-const MIDDLE: usize = 1;
-const END: usize = 2;
-const SINGLE: usize = 3;
+use crate::viterbi::{self, NUM_STATES};
 
 /// A trained BMES Hidden Markov Model for segmenting clusters the dictionary
 /// has no match for at all.
@@ -77,49 +73,12 @@ impl HmmModel {
     }
 
     /// Viterbi-decode the most likely BMES tag sequence for `clusters`.
-    /// `clusters` must be non-empty.
-    // Each state index `s`/`ps` indexes several parallel arrays at once
-    // (`score`, `back`, `self.trans`, plus a call into `emit_log_prob`) —
-    // an `.iter().enumerate()` rewrite wouldn't cover all of them and would
-    // read worse than the plain DP-style index loop.
-    #[allow(clippy::needless_range_loop)]
+    /// `clusters` must be non-empty. Emissions come from `emit_log_prob`; the
+    /// lattice itself is the shared [`crate::viterbi`] decoder.
     fn viterbi_tags(&self, clusters: &[String]) -> Vec<usize> {
-        let n = clusters.len();
-        let mut score = vec![[f64::NEG_INFINITY; NUM_STATES]; n];
-        let mut back = vec![[0usize; NUM_STATES]; n];
-
-        for s in 0..NUM_STATES {
-            score[0][s] = self.start[s] + self.emit_log_prob(&clusters[0], s);
-        }
-        for t in 1..n {
-            for s in 0..NUM_STATES {
-                let mut best_score = f64::NEG_INFINITY;
-                let mut best_prev = 0;
-                for ps in 0..NUM_STATES {
-                    let candidate = score[t - 1][ps] + self.trans[ps][s];
-                    if candidate > best_score {
-                        best_score = candidate;
-                        best_prev = ps;
-                    }
-                }
-                back[t][s] = best_prev;
-                score[t][s] = best_score + self.emit_log_prob(&clusters[t], s);
-            }
-        }
-
-        let mut best_final = 0;
-        for s in 1..NUM_STATES {
-            if score[n - 1][s] > score[n - 1][best_final] {
-                best_final = s;
-            }
-        }
-
-        let mut tags = vec![0usize; n];
-        tags[n - 1] = best_final;
-        for t in (1..n).rev() {
-            tags[t - 1] = back[t][tags[t]];
-        }
-        tags
+        viterbi::viterbi(clusters.len(), &self.start, &self.trans, |t| {
+            std::array::from_fn(|s| self.emit_log_prob(&clusters[t], s))
+        })
     }
 
     /// Segment a run of clusters that a dictionary strategy matched nothing
@@ -129,41 +88,14 @@ impl HmmModel {
             return Vec::new();
         }
         let tags = self.viterbi_tags(clusters);
-
-        let mut tokens = Vec::new();
-        let mut current: Vec<String> = Vec::new();
-        for (cluster, &tag) in clusters.iter().zip(&tags) {
-            match tag {
-                BEGIN => {
-                    if !current.is_empty() {
-                        tokens.push(std::mem::take(&mut current));
-                    }
-                    current.push(cluster.clone());
-                }
-                MIDDLE => current.push(cluster.clone()),
-                END => {
-                    current.push(cluster.clone());
-                    tokens.push(std::mem::take(&mut current));
-                }
-                SINGLE => {
-                    if !current.is_empty() {
-                        tokens.push(std::mem::take(&mut current));
-                    }
-                    tokens.push(vec![cluster.clone()]);
-                }
-                _ => unreachable!("tags are always in 0..NUM_STATES"),
-            }
-        }
-        if !current.is_empty() {
-            tokens.push(current);
-        }
-        tokens
+        viterbi::bmes_to_tokens(clusters, &tags)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::viterbi::{BEGIN, END, SINGLE};
 
     /// Build a model where "a" strongly emits Begin, "b" strongly emits End,
     /// "c" strongly emits Single, Begin strongly transitions to End, and End

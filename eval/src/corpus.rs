@@ -89,14 +89,14 @@ pub fn parse_alt(raw: &str, split: AltSplit) -> Vec<Example> {
             }
             let id_part = parts[0];
             let text_part = parts[1];
-            
+
             let id_subparts: Vec<&str> = id_part.split('.').collect();
             if id_subparts.len() < 2 {
                 return None;
             }
             let article_id_str = id_subparts[1];
             let article_id = article_id_str.parse::<u64>().unwrap_or(0);
-            
+
             let is_test = article_id % 10 == 0;
             match split {
                 AltSplit::Train => {
@@ -157,12 +157,12 @@ mod tests {
     #[test]
     fn parses_alt_format_and_splits_deterministically() {
         let raw = "SNT.80188.1\tអ៊ីតាលី បាន ឈ្នះ\nSNT.80180.2\tព័រទុយហ្គាល់ 31-5\n";
-        
+
         let train = parse_alt(raw, AltSplit::Train);
         assert_eq!(train.len(), 1);
         assert_eq!(train[0].gold_tokens, vec!["អ៊ីតាលី", "បាន", "ឈ្នះ"]);
         assert_eq!(train[0].input, "អ៊ីតាលីបានឈ្នះ");
-        
+
         let test = parse_alt(raw, AltSplit::Test);
         assert_eq!(test.len(), 1);
         assert_eq!(test[0].gold_tokens, vec!["ព័រទុយហ្គាល់", "31-5"]);

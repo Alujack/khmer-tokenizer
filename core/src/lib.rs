@@ -32,6 +32,7 @@ mod normalize;
 mod strategy;
 mod tagger;
 mod trie;
+mod viterbi;
 
 pub use hmm::HmmModel;
 pub use kcc::{is_khmer, is_khmer_base, split_kcc};
@@ -88,28 +89,13 @@ mod tests {
     use super::*;
 
     fn tk() -> KhmerTokenizer {
-        KhmerTokenizer::from_words([
-            "សួស្តី",
-            "អ្នក",
-            "ទាំងអស់គ្នា",
-            "កម្ពុជា",
-            "ភាសា",
-            "ខ្មែរ",
-            "ខ្ញុំ",
-            "ស្រឡាញ់",
-        ])
+        KhmerTokenizer::from_words(["សួស្តី", "អ្នក", "ទាំងអស់គ្នា", "កម្ពុជា", "ភាសា", "ខ្មែរ", "ខ្ញុំ", "ស្រឡាញ់"])
     }
 
     #[test]
     fn segments_known_words() {
-        assert_eq!(
-            tk().segment("សួស្តីអ្នកទាំងអស់គ្នា"),
-            vec!["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]
-        );
-        assert_eq!(
-            tk().segment("ខ្ញុំស្រឡាញ់កម្ពុជា"),
-            vec!["ខ្ញុំ", "ស្រឡាញ់", "កម្ពុជា"]
-        );
+        assert_eq!(tk().segment("សួស្តីអ្នកទាំងអស់គ្នា"), vec!["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]);
+        assert_eq!(tk().segment("ខ្ញុំស្រឡាញ់កម្ពុជា"), vec!["ខ្ញុំ", "ស្រឡាញ់", "កម្ពុជា"]);
         assert_eq!(tk().segment("ភាសាខ្មែរ"), vec!["ភាសា", "ខ្មែរ"]);
     }
 
@@ -139,10 +125,7 @@ mod tests {
     fn default_dict_loads_and_segments() {
         let tk = KhmerTokenizer::with_default_dict();
         assert!(!tk.is_empty());
-        assert_eq!(
-            tk.segment("សួស្តីអ្នកទាំងអស់គ្នា"),
-            vec!["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]
-        );
+        assert_eq!(tk.segment("សួស្តីអ្នកទាំងអស់គ្នា"), vec!["សួស្តី", "អ្នក", "ទាំងអស់គ្នា"]);
     }
 
     #[test]
@@ -159,10 +142,7 @@ mod tests {
         // ...and the headline cases segment whole instead of shattering.
         assert_eq!(tk.segment("ជំងឺកូវីដ"), vec!["ជំងឺ", "កូវីដ"]);
         assert_eq!(tk.segment("ខេត្តបាត់ដំបង"), vec!["ខេត្ត", "បាត់ដំបង"]);
-        assert_eq!(
-            tk.segment("ហ្វេសប៊ុកនិងយូធូប"),
-            vec!["ហ្វេសប៊ុក", "និង", "យូធូប"]
-        );
+        assert_eq!(tk.segment("ហ្វេសប៊ុកនិងយូធូប"), vec!["ហ្វេសប៊ុក", "និង", "យូធូប"]);
     }
 
     #[test]

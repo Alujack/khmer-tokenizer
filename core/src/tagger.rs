@@ -22,12 +22,7 @@
 use std::collections::HashMap;
 
 use crate::kcc::{is_khmer, is_khmer_base, is_khmer_digit, split_kcc, COENG};
-
-const NUM_STATES: usize = 4;
-const BEGIN: usize = 0;
-const MIDDLE: usize = 1;
-const END: usize = 2;
-const SINGLE: usize = 3;
+use crate::viterbi::{self, BEGIN, END, MIDDLE, NUM_STATES, SINGLE};
 
 /// Sentinel "cluster" for positions before the start / past the end of a
 /// run when building context features. Contains ASCII only, so it can never
@@ -100,24 +95,19 @@ fn features(clusters: &[String], i: usize) -> Vec<String> {
         format!("U+1={}", at(i + 1)),
         format!("U-2={}", at(i - 2)),
         format!("U+2={}", at(i + 2)),
-
         // Cluster Bigrams
         format!("B-1={}|{}", at(i - 1), at(i)),
         format!("B+1={}|{}", at(i), at(i + 1)),
         format!("B-2={}|{}", at(i - 2), at(i - 1)),
         format!("B+2={}|{}", at(i + 1), at(i + 2)),
-
         // Cluster Trigrams
         format!("T0={}|{}|{}", at(i - 1), at(i), at(i + 1)),
-
         // Cluster Length
         format!("L0={}", at(i).chars().count()),
-
         // Type Class Unigrams
         format!("C0={}", class_at(i)),
         format!("C-1={}", class_at(i - 1)),
         format!("C+1={}", class_at(i + 1)),
-
         // Type Class Bigrams
         format!("CB-1={}|{}", class_at(i - 1), class_at(i)),
         format!("CB+1={}|{}", class_at(i), class_at(i + 1)),
@@ -213,63 +203,26 @@ impl XorShift64 {
     }
 }
 
-#[allow(clippy::needless_range_loop)]
+/// Viterbi-decode with the *current* (non-averaged) training weights. Shares
+/// the lattice with [`crate::viterbi`]; only the emission scoring — summing
+/// the live `Cell` weights of each active feature — is specific to training.
 fn viterbi_decode(
     clusters: &[String],
     start: &[f64; NUM_STATES],
     trans: &[[f64; NUM_STATES]; NUM_STATES],
     weights: &HashMap<String, [Cell; NUM_STATES]>,
 ) -> Vec<usize> {
-    let n = clusters.len();
-    let mut score = vec![[f64::NEG_INFINITY; NUM_STATES]; n];
-    let mut back = vec![[0usize; NUM_STATES]; n];
-
-    let emit_score = |i: usize| -> [f64; NUM_STATES] {
+    viterbi::viterbi(clusters.len(), start, trans, |i| {
         let mut scores = [0.0; NUM_STATES];
         for feat in features(clusters, i) {
             if let Some(cells) = weights.get(&feat) {
-                for s in 0..NUM_STATES {
-                    scores[s] += cells[s].weight;
+                for (score, cell) in scores.iter_mut().zip(cells) {
+                    *score += cell.weight;
                 }
             }
         }
         scores
-    };
-
-    let first_emit = emit_score(0);
-    for s in 0..NUM_STATES {
-        score[0][s] = start[s] + first_emit[s];
-    }
-    for t in 1..n {
-        let emit = emit_score(t);
-        for s in 0..NUM_STATES {
-            let mut best_score = f64::NEG_INFINITY;
-            let mut best_prev = 0;
-            for ps in 0..NUM_STATES {
-                let candidate = score[t - 1][ps] + trans[ps][s];
-                if candidate > best_score {
-                    best_score = candidate;
-                    best_prev = ps;
-                }
-            }
-            back[t][s] = best_prev;
-            score[t][s] = best_score + emit[s];
-        }
-    }
-
-    let mut best_final = 0;
-    for s in 1..NUM_STATES {
-        if score[n - 1][s] > score[n - 1][best_final] {
-            best_final = s;
-        }
-    }
-
-    let mut tags = vec![0usize; n];
-    tags[n - 1] = best_final;
-    for t in (1..n).rev() {
-        tags[t - 1] = back[t][tags[t]];
-    }
-    tags
+    })
 }
 
 impl TaggerModel {
@@ -281,9 +234,9 @@ impl TaggerModel {
     ///
     /// Typical usage: 5 epochs over a few thousand sentences trains in
     /// seconds.
-    // The finalize loops index two parallel structures (`model.trans` and
-    // the `Cell` matrix `trans`) at once — same rationale as
-    // `viterbi_tags` for keeping plain index loops.
+    // Several loops here index two parallel `[_; NUM_STATES]` structures at
+    // once (the live `Cell` matrices and the averaged `model.*` arrays), which
+    // a range loop expresses more clearly than an iterator chain.
     #[allow(clippy::needless_range_loop)]
     pub fn train(sentences: &[Vec<String>], epochs: usize) -> Self {
         let runs = extract_runs(sentences);
@@ -377,49 +330,12 @@ impl TaggerModel {
 
     /// Viterbi-decode the highest-scoring BMES tag sequence for `clusters`.
     /// `clusters` must be non-empty. Ties break toward the lower tag index,
-    /// so decoding is deterministic.
-    // Same parallel-array DP indexing as HmmModel::viterbi_tags — an
-    // iterator rewrite wouldn't cover `score`/`back`/`self.trans` at once.
-    #[allow(clippy::needless_range_loop)]
+    /// so decoding is deterministic. Emissions are the summed feature scores;
+    /// the lattice is the shared [`crate::viterbi`] decoder.
     fn viterbi_tags(&self, clusters: &[String]) -> Vec<usize> {
-        let n = clusters.len();
-        let mut score = vec![[f64::NEG_INFINITY; NUM_STATES]; n];
-        let mut back = vec![[0usize; NUM_STATES]; n];
-
-        let first_emit = self.emit_scores(clusters, 0);
-        for s in 0..NUM_STATES {
-            score[0][s] = self.start[s] + first_emit[s];
-        }
-        for t in 1..n {
-            let emit = self.emit_scores(clusters, t);
-            for s in 0..NUM_STATES {
-                let mut best_score = f64::NEG_INFINITY;
-                let mut best_prev = 0;
-                for ps in 0..NUM_STATES {
-                    let candidate = score[t - 1][ps] + self.trans[ps][s];
-                    if candidate > best_score {
-                        best_score = candidate;
-                        best_prev = ps;
-                    }
-                }
-                back[t][s] = best_prev;
-                score[t][s] = best_score + emit[s];
-            }
-        }
-
-        let mut best_final = 0;
-        for s in 1..NUM_STATES {
-            if score[n - 1][s] > score[n - 1][best_final] {
-                best_final = s;
-            }
-        }
-
-        let mut tags = vec![0usize; n];
-        tags[n - 1] = best_final;
-        for t in (1..n).rev() {
-            tags[t - 1] = back[t][tags[t]];
-        }
-        tags
+        viterbi::viterbi(clusters.len(), &self.start, &self.trans, |i| {
+            self.emit_scores(clusters, i)
+        })
     }
 
     /// Segment a run of clusters by Viterbi-decoded BMES tags. Used both as
@@ -431,35 +347,7 @@ impl TaggerModel {
             return Vec::new();
         }
         let tags = self.viterbi_tags(clusters);
-
-        let mut tokens = Vec::new();
-        let mut current: Vec<String> = Vec::new();
-        for (cluster, &tag) in clusters.iter().zip(&tags) {
-            match tag {
-                BEGIN => {
-                    if !current.is_empty() {
-                        tokens.push(std::mem::take(&mut current));
-                    }
-                    current.push(cluster.clone());
-                }
-                MIDDLE => current.push(cluster.clone()),
-                END => {
-                    current.push(cluster.clone());
-                    tokens.push(std::mem::take(&mut current));
-                }
-                SINGLE => {
-                    if !current.is_empty() {
-                        tokens.push(std::mem::take(&mut current));
-                    }
-                    tokens.push(vec![cluster.clone()]);
-                }
-                _ => unreachable!("tags are always in 0..NUM_STATES"),
-            }
-        }
-        if !current.is_empty() {
-            tokens.push(current);
-        }
-        tokens
+        viterbi::bmes_to_tokens(clusters, &tags)
     }
 
     /// Serialize to a plain-text format (`khmer-tokenizer-tagger v1`):
@@ -677,7 +565,11 @@ mod tests {
     fn keys_with_tabs_and_newlines_still_round_trip() {
         // train() accepts arbitrary words; a tab or newline inside one ends
         // up inside feature keys and must not corrupt the line-based format.
-        let sentences = vec![vec!["ក\tx".to_string(), "ក\ny".to_string(), "ខគ".to_string()]];
+        let sentences = vec![vec![
+            "ក\tx".to_string(),
+            "ក\ny".to_string(),
+            "ខគ".to_string(),
+        ]];
         let model = TaggerModel::train(&sentences, 3);
         let restored = TaggerModel::from_text(&model.to_text()).unwrap();
         assert_eq!(model.to_text(), restored.to_text());
@@ -713,11 +605,7 @@ mod tests {
 
     #[test]
     fn non_khmer_words_break_training_runs() {
-        let sentences = vec![vec![
-            "ក".to_string(),
-            "Rust".to_string(),
-            "ខគ".to_string(),
-        ]];
+        let sentences = vec![vec!["ក".to_string(), "Rust".to_string(), "ខគ".to_string()]];
         let runs = extract_runs(&sentences);
         assert_eq!(runs.len(), 2);
         assert_eq!(runs[0].1, vec![SINGLE]);

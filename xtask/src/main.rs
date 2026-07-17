@@ -36,9 +36,13 @@ fn print_usage() {
     eprintln!("USAGE: cargo xtask <COMMAND>\n");
     eprintln!("COMMANDS:");
     eprintln!("  eval               Download khPOS and print P/R/F1 for the current tokenizer");
-    eprintln!("  eval-kh10000b      Evaluate against the local kh_data_10000b corpus (silver reference)");
+    eprintln!(
+        "  eval-kh10000b      Evaluate against the local kh_data_10000b corpus (silver reference)"
+    );
     eprintln!("  prepare-dict       Rebuild core/src/dict.txt from chamkho's khmerdict.txt");
-    eprintln!("  train-tagger [--alt] OUT   Train a TaggerModel from khPOS (or ALT) and write it to OUT");
+    eprintln!(
+        "  train-tagger [--alt] OUT   Train a TaggerModel from khPOS (or ALT) and write it to OUT"
+    );
 }
 
 fn run_eval() {
@@ -122,7 +126,10 @@ fn run_eval() {
         .with_tagger(tagger_model.clone())
         .without_normalization();
     let metrics = evaluate(&examples, &tokenizer);
-    report::print_table("ForwardMaxMatch + Tagger (khPOS train, local-only)", &metrics);
+    report::print_table(
+        "ForwardMaxMatch + Tagger (khPOS train, local-only)",
+        &metrics,
+    );
 
     let tokenizer = KhmerTokenizer::with_default_dict()
         .with_strategy(Strategy::UnigramDp)
@@ -165,7 +172,10 @@ fn run_eval() {
     // of their own.
     let tokenizer = KhmerTokenizer::with_default_dict();
     let metrics = evaluate(&examples, &tokenizer);
-    report::print_table("MinWordsDp + OOV grouping + Normalization (v0.3 default)", &metrics);
+    report::print_table(
+        "MinWordsDp + OOV grouping + Normalization (v0.3 default)",
+        &metrics,
+    );
 }
 
 /// `kh_data_10000b` isn't auto-downloaded like khPOS/chamkho — its source
@@ -228,18 +238,20 @@ fn run_eval_kh10000b() {
         eprintln!("error: could not fetch khPOS for the cross-corpus tagger rows: {e}");
         std::process::exit(1);
     });
-    let train_examples =
-        corpus::load_khpos_dir(&khpos_dir, Split::Train).unwrap_or_else(|e| {
-            eprintln!("error: could not read khPOS train split: {e}");
-            std::process::exit(1);
-        });
+    let train_examples = corpus::load_khpos_dir(&khpos_dir, Split::Train).unwrap_or_else(|e| {
+        eprintln!("error: could not read khPOS train split: {e}");
+        std::process::exit(1);
+    });
     let tagger_model = train_tagger(&train_examples, 5);
 
     let tokenizer = KhmerTokenizer::with_default_dict()
         .with_tagger(tagger_model.clone())
         .without_normalization();
     let metrics = evaluate(&result.examples, &tokenizer);
-    report::print_table("FMM + Tagger fallback (khPOS-trained, CROSS-corpus)", &metrics);
+    report::print_table(
+        "FMM + Tagger fallback (khPOS-trained, CROSS-corpus)",
+        &metrics,
+    );
 
     let tokenizer = KhmerTokenizer::with_default_dict()
         .with_strategy(Strategy::Tagger)
@@ -281,7 +293,11 @@ fn run_train_tagger(args: &[String]) {
             eprintln!("error: could not fetch ALT corpus: {e}");
             std::process::exit(1);
         });
-        khmer_tokenizer_eval::corpus::load_alt_dir(&alt_dir, khmer_tokenizer_eval::corpus::AltSplit::Train).unwrap_or_else(|e| {
+        khmer_tokenizer_eval::corpus::load_alt_dir(
+            &alt_dir,
+            khmer_tokenizer_eval::corpus::AltSplit::Train,
+        )
+        .unwrap_or_else(|e| {
             eprintln!("error: could not read ALT train split: {e}");
             std::process::exit(1);
         })

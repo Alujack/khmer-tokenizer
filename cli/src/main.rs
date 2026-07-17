@@ -151,8 +151,7 @@ fn value_for(args: &[String], i: &mut usize, flag: &str) -> String {
 }
 
 fn read_file(path: &str) -> String {
-    std::fs::read_to_string(path)
-        .unwrap_or_else(|e| fail(&format!("could not read '{path}': {e}")))
+    std::fs::read_to_string(path).unwrap_or_else(|e| fail(&format!("could not read '{path}': {e}")))
 }
 
 /// Parse a frequency table: one `word<whitespace>count` entry per line.

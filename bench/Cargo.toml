@@ -1,0 +1,28 @@
+# Throughput benchmarks for khmer-tokenizer-core.
+#
+# Detached from the root workspace (its own `[workspace]` table, like py/ and
+# wasm/) so the core workspace — and its CI — stay free of third-party
+# dependencies. criterion lives only here.
+#
+# Run with:
+#   cargo bench --manifest-path bench/Cargo.toml
+[package]
+name = "khmer-tokenizer-bench"
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+khmer-tokenizer-core = { path = "../core" }
+
+[dev-dependencies]
+# default-features off drops the plotters/rayon tree; cargo_bench_support is
+# the one feature needed to run under `cargo bench`.
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "segment"
+harness = false

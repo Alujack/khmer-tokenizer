@@ -22,7 +22,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
+      - name: Format check
+        run: cargo fmt --all -- --check
       - name: Build workspace
         run: cargo build --workspace --verbose
       - name: Test workspace (includes the Phase 6 regression guard)

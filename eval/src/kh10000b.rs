@@ -40,7 +40,9 @@ fn split_tokens(line: &str) -> Vec<String> {
 /// Strip every boundary marker this corpus uses (plus newlines, so
 /// multi-line documents compare as one stream), for alignment checking.
 fn strip_boundaries(text: &str) -> String {
-    text.chars().filter(|&c| !is_boundary(c) && c != '\n').collect()
+    text.chars()
+        .filter(|&c| !is_boundary(c) && c != '\n')
+        .collect()
 }
 
 /// Parse one `_orig.txt` / `_seg_200b.txt` pair into examples, one per
@@ -104,7 +106,11 @@ pub fn load_dir(dir: &Path) -> io::Result<LoadResult> {
         }
     }
 
-    Ok(LoadResult { examples, skipped_pairs, total_pairs })
+    Ok(LoadResult {
+        examples,
+        skipped_pairs,
+        total_pairs,
+    })
 }
 
 #[cfg(test)]

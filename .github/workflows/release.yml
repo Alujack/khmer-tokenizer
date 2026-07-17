@@ -1,16 +1,23 @@
-name: Release (PyPI)
+name: Release
 
-# Builds khmer-tokenizer wheels for every major platform and publishes them
-# to PyPI via Trusted Publishing (OIDC) — no API token stored anywhere.
+# Publishes a tagged release to all three registries:
+#   - PyPI     (khmer-tokenizer)      via Trusted Publishing (OIDC), no token
+#   - crates.io (khmer-tokenizer-core, khmer-tokenizer-cli) via CARGO_REGISTRY_TOKEN
+#   - npm      (kh-tokenizer)         via NPM_TOKEN
 #
-# One-time setup on PyPI (Manage project -> Publishing -> add a publisher):
-#   owner: Alujack   repository: khmer-tokenizer
-#   workflow: release.yml   environment: pypi
+# One-time setup:
+#   PyPI (Manage project -> Publishing -> add a publisher):
+#     owner: Alujack   repository: khmer-tokenizer
+#     workflow: release.yml   environment: pypi
+#   crates.io: add repository secret CARGO_REGISTRY_TOKEN (from crates.io/settings/tokens)
+#   npm:       add repository secret NPM_TOKEN (an "Automation" token)
 #
 # Triggers on version tags (v*). Can also be run manually from the Actions
 # tab (workflow_dispatch) — useful for backfilling wheels for an existing
 # release, since `skip-existing` makes re-uploads of same-version files a
-# no-op rather than an error.
+# no-op rather than an error. The crates.io and npm jobs only run on an
+# actual tag push (they have no idempotent "skip-existing", so a manual
+# re-run would fail loudly on an already-published version).
 
 on:
   push:
@@ -90,3 +97,49 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  crates:
+    name: Publish to crates.io
+    # Only on a real tag push — cargo publish is not idempotent.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish core, then cli
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          # core must be on crates.io before cli (a path+version dependency)
+          # can resolve the published version. --no-verify keeps the second
+          # publish from rebuilding; retry the cli publish so it survives the
+          # short indexing delay after core appears.
+          cargo publish -p khmer-tokenizer-core
+          for i in 1 2 3 4 5; do
+            cargo publish -p khmer-tokenizer-cli && break
+            echo "cli publish attempt $i failed (core may still be indexing); retrying in 30s"
+            sleep 30
+          done
+
+  npm:
+    name: Publish to npm
+    # Only on a real tag push — npm publish is not idempotent.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Build the hybrid npm package
+        run: node wasm/prepare-npm-pkg.js
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish wasm/pkg --access public

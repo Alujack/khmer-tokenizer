@@ -749,7 +749,9 @@ mod tests {
             ("កខ".to_string(), 1),
             ("គ".to_string(), 1),
         ];
-        let tk = tk.with_strategy(Strategy::UnigramDp).with_frequencies(freqs);
+        let tk = tk
+            .with_strategy(Strategy::UnigramDp)
+            .with_frequencies(freqs);
         assert_eq!(tk.segment("កខគ"), vec!["ក", "ខគ"]);
     }
 
@@ -939,10 +941,7 @@ mod tests {
         // កូវីដ (Covid) is absent from this small dictionary; it must come
         // out as one unknown-word token, not ក|វី|ដ cluster confetti.
         let tk = KhmerTokenizer::from_words(["ជំងឺ", "នៅ", "កម្ពុជា"]);
-        assert_eq!(
-            tk.segment("ជំងឺកូវីដនៅកម្ពុជា"),
-            vec!["ជំងឺ", "កូវីដ", "នៅ", "កម្ពុជា"]
-        );
+        assert_eq!(tk.segment("ជំងឺកូវីដនៅកម្ពុជា"), vec!["ជំងឺ", "កូវីដ", "នៅ", "កម្ពុជា"]);
     }
 
     #[test]

@@ -158,89 +158,204 @@ pub fn normalize(text: &str) -> String {
     chars.into_iter().collect()
 }
 
-/// Fully normalize text: performs combining character ordering, orthographic
-/// replacements (e.g. ឲ -> ឱ្យ), common spelling corrections, and punctuation/whitespace
-/// cleanup. Note that this changes string length, so byte offsets will not align
-/// with the original text.
+/// Spelling/orthographic rewrites applied by [`normalize_full`], **in order**.
+/// Order is load-bearing: `ឲ្យ` (the common variant of `ឱ្យ`) must be rewritten
+/// before bare `ឲ`, or the bare-`ឲ` rule would turn it into `ឱ្យ្យ` — a double
+/// subscript, i.e. corrupted text. The `េ`+`ា` / `េ`+`ី` pairs are two-part-vowel
+/// typing errors (a base takes one dependent vowel) rewritten to the single
+/// canonical code point. The rest are a few hand-picked common misspellings.
+///
+/// This is a **small, hand-curated best-effort table, not a spell-checker** —
+/// see the caveat on [`normalize_full`].
+const FULL_REPLACEMENTS: &[(&str, &str)] = &[
+    ("ឲ្យ", "ឱ្យ"),
+    ("ឲ", "ឱ្យ"),
+    ("\u{17C1}\u{17B6}", "\u{17C4}"), // េ + ា -> ោ
+    ("\u{17C1}\u{17B8}", "\u{17BE}"), // េ + ី -> ើ
+    ("\u{17A3}", "\u{17A2}"),         // deprecated ឣ -> អ
+    // NB: សាស្រ្ត -> សាស្ត្រ needs no entry — normalize()'s rule 3
+    // (subscript-RO reordering) already repairs it, and every other word
+    // with the same swap, before this table runs.
+    ("យូលង់", "យូរលង់"),
+    ("ចរិក", "ចរិត"),
+    ("ប្រភទ", "ប្រភេទ"),
+];
+
+/// Words that take a space *before* them (conjunctions / clause markers), used
+/// by [`normalize_full`]'s spacing pass. Hand-maintained; see the caveat there.
+const SPACED_BEFORE: &[&str] = &[
+    "ឬក៏ជា",
+    "ប៉ុន្តែ",
+    "តែ",
+    "ហើយ",
+    "ព្រោះ",
+    "ពីព្រោះ",
+    "ព្រមទាំង",
+    "កាលណា",
+    "ខណៈពេល",
+    "ដូចជា",
+    "មាន",
+    "មិនមាន",
+    "មិនមែន",
+    "និង",
+    "ឬ",
+];
+
+/// Words that take a space *after* them, used by [`normalize_full`].
+const SPACED_AFTER: &[&str] = &[
+    "ឬក៏ជា",
+    "ប៉ុន្តែ",
+    "តែ",
+    "ហើយ",
+    "ព្រោះ",
+    "ពីព្រោះ",
+    "ព្រមទាំង",
+    "កាលណា",
+    "ខណៈពេល",
+    "ដូចជា",
+];
+
+/// Suffixes/modifiers that must never take a space *before* them (they bind to
+/// the token on their left), overriding [`SPACED_AFTER`] in [`normalize_full`].
+const FORCE_MERGE_LEFT: &[&str] = &[
+    "ខ្មែរ",
+    "ជាតិ",
+    "ធំ",
+    "តូច",
+    "ថ្មី",
+    "ចាស់",
+    "ល្អ",
+    "អាក្រក់",
+    "ច្រើន",
+    "តិច",
+    "ខ្លាំង",
+    "ខ្សោយ",
+    "គ្រប់",
+    "ទាំងអស់",
+    "នីមួយៗ",
+    "ផ្ទាល់ខ្លួន",
+    "ផ្ទាល់",
+    "ផ្ទាល់មាត់",
+    "ក្នុងស្រុក",
+    "ក្រៅប្រទេស",
+    "ទៅ",
+    "មក",
+    "ឡើង",
+    "ចុះ",
+    "ចេញ",
+    "ចូល",
+    "ទៀត",
+    "ដែរ",
+    "ណាស់",
+    "ពេក",
+    "ជាង",
+    "បំផុត",
+    "ពិតប្រាកដ",
+    "ពិត",
+    "ប្រាកដ",
+    "របស់ខ្លួន",
+    "ខ្លួន",
+    "ឃើញថា",
+    "យល់ឃើញ",
+    "អារាម",
+    "សិល្ប៍",
+    "សាស្ត្រ",
+    "សង្គម",
+];
+
+/// Prefixes/particles that must never take a space *after* them (they bind to
+/// the token on their right), overriding [`SPACED_BEFORE`] in [`normalize_full`].
+const FORCE_MERGE_RIGHT: &[&str] = &[
+    "មិន",
+    "កុំ",
+    "គ្មាន",
+    "ឥត",
+    "និង",
+    "នៃ",
+    "ក្នុង",
+    "ចំពោះ",
+    "លើ",
+    "ក្រោម",
+    "ពី",
+    "ទៅ",
+    "ដល់",
+    "តាម",
+    "ដោយ",
+    "នៅ",
+    "ជាមួយ",
+    "ជាមួយនឹង",
+    "ការ",
+    "សេចក្តី",
+    "ភាព",
+    "រឿង",
+    "វត្ត",
+    "ព្រះ",
+    "អក្សរ",
+    "ត្រូវ",
+    "អាច",
+    "បាន",
+    "កំពុង",
+    "តែង",
+    "ធ្លាប់",
+    "ឱ្យ",
+    "ជា",
+    "គឺ",
+    "គឺជា",
+];
+
+/// Aggressively normalize text for **display/readability**: combining-mark
+/// reordering ([`normalize`]), then a small table of spelling/orthographic
+/// rewrites ([`FULL_REPLACEMENTS`]), then re-spacing around a hand-maintained
+/// set of conjunctions and particles.
+///
+/// Unlike [`normalize`], this is a **best-effort heuristic, not a principled or
+/// benchmarked corrector**: the spacing pass only knows the specific words in
+/// [`SPACED_BEFORE`]/[`SPACED_AFTER`]/[`FORCE_MERGE_LEFT`]/[`FORCE_MERGE_RIGHT`],
+/// and the spelling table is a short hand-picked list — both will silently
+/// leave anything they don't know unchanged. It also **changes string length**
+/// (the rewrites and spacing are not byte-preserving), so unlike [`normalize`]
+/// its output cannot be aligned back to the input by byte offset. Prefer
+/// [`normalize`] for anything correctness-critical (segmentation, indexing,
+/// span scoring); reach for `normalize_full` when you want cleaner-looking
+/// Khmer for humans and occasional mis-spacing is acceptable.
 pub fn normalize_full(text: &str) -> String {
-    // 1. Combining character reordering (existing rule 1 & rule 2)
-    let reordered = normalize(text);
+    // 1. Combining-mark reordering (byte-preserving; see `normalize`).
+    let mut normalized = normalize(text);
 
-    // 2. Replacements: spelling and orthographic corrections.
-    //
-    // Order matters: "ឲ្យ" (the extremely common variant spelling of
-    // "ឱ្យ") must be rewritten *before* bare "ឲ", or the bare-ឲ rule
-    // would turn it into "ឱ្យ្យ" — a double subscript, i.e. corrupted
-    // text, not a correction.
-    //
-    // "េា"/"េី" are two-part-vowel typing errors: a base takes one
-    // dependent vowel, so េ directly followed by ា or ី is never valid —
-    // the typist built ោ (or ើ) out of two keystrokes. Rewriting to the
-    // single canonical code point is the standard repair.
-    let normalized = reordered
-        .replace("ឲ្យ", "ឱ្យ")
-        .replace("ឲ", "ឱ្យ")
-        .replace("\u{17C1}\u{17B6}", "\u{17C4}") // េ + ា -> ោ
-        .replace("\u{17C1}\u{17B8}", "\u{17BE}") // េ + ី -> ើ
-        .replace("\u{17A3}", "\u{17A2}") // deprecated ឣ -> អ
-        // NB: សាស្រ្ត -> សាស្ត្រ no longer needs a replacement here —
-        // normalize()'s rule 3 (subscript-RO reordering) repairs it, and
-        // every other word with the same swap, before this point.
-        .replace("យូលង់", "យូរលង់")
-        .replace("ចរិក", "ចរិត")
-        .replace("ប្រភទ", "ប្រភេទ");
+    // 2. Spelling / orthographic rewrites, in table order (see the note on
+    //    ordering in FULL_REPLACEMENTS).
+    for (from, to) in FULL_REPLACEMENTS {
+        if normalized.contains(from) {
+            normalized = normalized.replace(from, to);
+        }
+    }
 
-    // 3. Segment the text to identify word boundaries.
-    let tokenizer = get_tokenizer();
-    let tokens = tokenizer.segment(&normalized);
+    // 3. Segment, then 4. rejoin with heuristic spacing.
+    let tokens = get_tokenizer().segment(&normalized);
+    join_with_spacing(&tokens)
+}
 
-    // 4. Reconstruct the text with normalized spaces.
-    let mut result = String::with_capacity(normalized.len());
-    
-    // Spaced words: conjunctions and clause-starting markers
-    let spaced_before = [
-        "ឬក៏ជា", "ប៉ុន្តែ", "តែ", "ហើយ", "ព្រោះ", "ពីព្រោះ", "ព្រមទាំង", 
-        "កាលណា", "ខណៈពេល", "ដូចជា", "មាន", "មិនមាន", "មិនមែន", "និង", "ឬ"
-    ];
-    let spaced_after = [
-        "ឬក៏ជា", "ប៉ុន្តែ", "តែ", "ហើយ", "ព្រោះ", "ពីព្រោះ", "ព្រមទាំង", 
-        "កាលណា", "ខណៈពេល", "ដូចជា"
-    ];
-
-    // Suffixes/modifiers that should NEVER have a space before them (forces merging with the left token)
-    let force_merge_left = [
-        "ខ្មែរ", "ជាតិ", "ធំ", "តូច", "ថ្មី", "ចាស់", "ល្អ", "អាក្រក់", "ច្រើន", "តិច", 
-        "ខ្លាំង", "ខ្សោយ", "គ្រប់", "ទាំងអស់", "នីមួយៗ", "ផ្ទាល់ខ្លួន", "ផ្ទាល់", 
-        "ផ្ទាល់មាត់", "ក្នុងស្រុក", "ក្រៅប្រទេស", "ទៅ", "មក", "ឡើង", "ចុះ", "ចេញ", 
-        "ចូល", "ទៀត", "ដែរ", "ណាស់", "ពេក", "ជាង", "បំផុត", "ពិតប្រាកដ", "ពិត", 
-        "ប្រាកដ", "របស់ខ្លួន", "ខ្លួន", "ឃើញថា", "យល់ឃើញ", "អារាម", "សិល្ប៍", "សាស្ត្រ", "សង្គម"
-    ];
-
-    // Prefixes/particles that should NEVER have a space after them (forces merging with the right token)
-    let force_merge_right = [
-        "មិន", "កុំ", "គ្មាន", "ឥត", "និង", "នៃ", "ក្នុង", "ចំពោះ", "លើ", "ក្រោម", 
-        "ពី", "ទៅ", "ដល់", "តាម", "ដោយ", "នៅ", "ជាមួយ", "ជាមួយនឹង", "ការ", 
-        "សេចក្តី", "ភាព", "រឿង", "វត្ត", "ព្រះ", "អក្សរ", "ត្រូវ", "អាច", "បាន", 
-        "កំពុង", "តែង", "ធ្លាប់", "ឱ្យ", "ជា", "គឺ", "គឺជា"
-    ];
-
+/// Rejoin segmented `tokens` into a string, inserting a space only where the
+/// heuristic word lists call for one. Punctuation (`។ ៕ ៖`) always gets a
+/// trailing space; otherwise a boundary is spaced when the right token wants a
+/// space before it or the left token wants one after it, unless a force-merge
+/// rule vetoes it.
+fn join_with_spacing(tokens: &[String]) -> String {
+    let mut result = String::new();
     for (i, tok) in tokens.iter().enumerate() {
         if i > 0 {
-            let prev = &tokens[i - 1];
-            
-            // Check if we should insert a space
+            let prev = tokens[i - 1].as_str();
+            let cur = tok.as_str();
             let should_space = (prev == "។" || prev == "៕" || prev == "៖")
-                || ((spaced_before.contains(&tok.as_str()) || spaced_after.contains(&prev.as_str()))
-                    && !force_merge_right.contains(&prev.as_str())
-                    && !force_merge_left.contains(&tok.as_str()));
-
+                || ((SPACED_BEFORE.contains(&cur) || SPACED_AFTER.contains(&prev))
+                    && !FORCE_MERGE_RIGHT.contains(&prev)
+                    && !FORCE_MERGE_LEFT.contains(&cur));
             if should_space {
                 result.push(' ');
             }
         }
         result.push_str(tok);
     }
-
     result.trim().to_string()
 }
 
@@ -366,7 +481,7 @@ mod tests {
         // Rule 4: ាំ typed as ំា (both render identically).
         let swapped = "ណ\u{17C6}\u{17B6}"; // ណ ំ ា
         assert_eq!(normalize(swapped), "ណ\u{17B6}\u{17C6}"); // ណាំ
-        // ុំ typed as ំុ.
+                                                             // ុំ typed as ំុ.
         let swapped = "ខ\u{17D2}\u{1789}\u{17C6}\u{17BB}"; // ខ ្ញ ំ ុ
         assert_eq!(normalize(swapped), "ខ្ញុំ");
         // A vowel typed before a register shifter is also repaired.
@@ -379,7 +494,8 @@ mod tests {
 
     #[test]
     fn ro_swap_and_sign_order_repairs_preserve_byte_length_and_idempotence() {
-        for s in ["ស្រ្តី", "រដ្ឋមន្រ្តី", "ណ\u{17C6}\u{17B6}"] {
+        for s in ["ស្រ្តី", "រដ្ឋមន្រ្តី", "ណ\u{17C6}\u{17B6}"]
+        {
             let once = normalize(s);
             assert_eq!(once.len(), s.len(), "byte length changed for {s:?}");
             assert_eq!(normalize(&once), once, "not idempotent for {s:?}");

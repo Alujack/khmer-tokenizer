@@ -11,6 +11,35 @@ token counts as correct only if both boundaries match gold), **R-iv** /
 tokenizer's dictionary), **word accuracy** (fraction of sentences segmented
 with a fully correct token sequence).
 
+## Current results (v0.3) — read this table
+
+These are the numbers that describe the **current** code; the running log
+further down is kept as a historical record of how each phase moved them.
+All rows are khPOS `OPEN-TEST` (1,000 sentences).
+
+| Configuration | Ships this? | P | R | F1 | R-iv | R-oov | Word Acc |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `MinWordsDp` + OOV grouping + normalize **(default)** | ✅ dict only | 0.740 | 0.762 | **0.751** | 0.821 | 0.437 | 0.380 |
+| `BiMaxMatch` | ✅ dict only | 0.733 | 0.760 | 0.746 | 0.820 | 0.427 | 0.369 |
+| `UnigramDp` + HMM + normalize | ❌ you supply freqs + BMES counts | 0.773 | 0.809 | 0.791 | 0.876 | 0.439 | 0.392 |
+| `Strategy::Tagger`, full (in-domain) | ❌ you train the model | 0.937 | 0.949 | **0.943** | 0.955 | 0.914 | 0.810 |
+| `Strategy::Tagger`, full (cross-corpus, silver) | ❌ you train the model | 0.879 | 0.853 | 0.866 | 0.889 | 0.686 | 0.148 |
+
+**What ships out of the box is the first row: F1 ≈ 0.75.** Every stronger row
+needs data *you* supply (a frequency table, BMES counts, or a corpus to train
+the tagger) — none of that ships, because no commercially-clean,
+redistributable Khmer frequency/segmentation corpus has been found (see
+[ROADMAP.md](./ROADMAP.md)). The **0.94 tagger is in-domain** (khPOS train and
+test share annotators/conventions); on a different corpus the same model drops
+to **F1 ≈ 0.87** — that cross-corpus row is the honest real-world number.
+
+> Reproduction: `cargo xtask eval` after placing khPOS under `data/khpos`. The
+> default row (F1 0.751) and the hybrid/tagger rows above reproduce
+> deterministically; figures are rounded to 3 dp here (full precision in the
+> running log below).
+
+## Running log (historical — superseded rows kept for provenance)
+
 | Date       | Strategy        | Dictionary                              | P      | R      | F1     | R-iv   | R-oov  | Word Acc | Corpus          |
 | ---------- | --------------- | ---------------------------------------- | ------ | ------ | ------ | ------ | ------ | -------- | ---------------- |
 | 2026-07-01 | ForwardMaxMatch | seed dict (~100 words)                    | 0.1576 | 0.3501 | 0.2174 | 0.9990 | 0.2047 | 0.0050   | khPOS OPEN-TEST |

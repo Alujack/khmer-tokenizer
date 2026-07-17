@@ -1,0 +1,54 @@
+name: Bug report
+description: A wrong segmentation, a panic, or other incorrect behavior
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! A concrete input/output example is worth a
+        thousand words. For a *wrong segmentation*, please give the exact input
+        text and the tokens you got versus what you expected.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Crate / PyPI / npm version, or git commit.
+      placeholder: "khmer-tokenizer-core 0.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      options: [Rust crate, CLI, Python (pip), JS/WASM (npm)]
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input text
+      description: The exact Khmer text (paste it directly).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Strategy, custom dictionary, normalization on/off, etc.
+      placeholder: "default (MinWordsDp, normalization on, OOV grouping on)"

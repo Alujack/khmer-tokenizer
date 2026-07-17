@@ -2,7 +2,15 @@
 /target
 /py/target
 /wasm/target
+/bench/target
 **/*.rs.bk
+
+# cargo-fuzz (fuzz/ is a detached crate; corpora/artifacts/coverage are local)
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+/fuzz/coverage
+/fuzz/Cargo.lock
 
 # wasm-pack output (wasm/ bindings) — generated, published to npm, never committed
 /wasm/pkg*

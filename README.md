@@ -68,7 +68,7 @@ Segmentation runs in three passes:
    splits *inside* an orthographic syllable — the classic bug in naive Khmer
    tokenizers.
 2. **Boundary pass** — a trie keyed on whole clusters is walked to place word
-   boundaries, using one of four [`Strategy`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/strategy.rs) algorithms:
+   boundaries, using one of five [`Strategy`](https://github.com/Alujack/khmer-tokenizer/blob/master/core/src/strategy.rs) algorithms:
    - `MinWordsDp` (default since v0.3) — fewest-words dynamic programming
      over a DAG of every dictionary match: picks the segmentation with the
      fewest tokens, breaking ties by the most characters covered by
@@ -94,10 +94,12 @@ Segmentation runs in three passes:
    - `Tagger` — skips the dictionary entirely: every Khmer run is segmented
      by an averaged-perceptron BMES tagger (`TaggerModel`, the CRF-class
      tier) attached via `with_tagger(...)`. The most accurate mode overall
-     — **F1 0.94 vs 0.79 for the best dictionary configuration** on khPOS
-     (see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)) — but needs a model you train
-     yourself with `TaggerModel::train` on a segmented corpus; **none ships
-     with this crate**. Falls back to `MinWordsDp` if none is set.
+     — **F1 0.93 in-domain vs 0.75 for the shipped default** on khPOS
+     (see [Accuracy](#accuracy) and [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md)) —
+     but needs a model you train yourself with `TaggerModel::train` on a
+     segmented corpus; **none ships with this crate**, and that 0.93 is
+     *in-domain* (it drops to ~0.87 cross-corpus). Falls back to `MinWordsDp`
+     if none is set.
 
    Either way, only runs of Khmer *letters* go to the strategy. Runs of
    non-Khmer text (Latin, ASCII digits, punctuation) become their own
@@ -133,6 +135,62 @@ Segmentation runs in three passes:
 The engine is `std`-only and deterministic. No model, no training step, no
 network.
 
+## Accuracy
+
+Measured on the [khPOS](https://github.com/ye-kyaw-thu/khPOS) `OPEN-TEST`
+split (1,000 sentences), token-span P/R/F1 (SIGHAN convention — a predicted
+token counts as correct only if *both* boundaries match gold). Reproduce with
+`cargo xtask eval` after placing the corpus under `data/khpos` (it is
+CC BY-NC-SA and never committed — see [ATTRIBUTION.md](https://github.com/Alujack/khmer-tokenizer/blob/master/core/ATTRIBUTION.md)):
+
+| Tier | Ships a model? | Precision | Recall | F1 | Word acc. |
+| --- | --- | --- | --- | --- | --- |
+| `MinWordsDp` + OOV grouping + normalize **(shipped default)** | ✅ dict only | 0.740 | 0.762 | **0.751** | 0.380 |
+| `BiMaxMatch` | ✅ dict only | 0.733 | 0.760 | 0.746 | 0.369 |
+| `UnigramDp` + HMM + normalize | ❌ you supply freqs + counts | 0.773 | 0.809 | 0.791 | 0.392 |
+| `Strategy::Tagger`, full (in-domain) | ❌ you train it | 0.937 | 0.949 | **0.943** | 0.810 |
+
+Two honesty notes, because they matter:
+
+- **What you get with a fresh `pip`/`cargo`/`npm` install is the top row: F1
+  ≈ 0.75.** Everything below it needs data *you* supply (a frequency table, or
+  a corpus to train the tagger). No such data ships, because no
+  commercially-clean, redistributable Khmer frequency/segmentation corpus has
+  been found (see [docs/ROADMAP.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/ROADMAP.md)).
+- **The 0.94 tagger number is *in-domain*** — khPOS's train and test splits
+  share annotators and conventions. On a different corpus
+  (`kh_data_10000b`, silver) the same model scores **F1 ≈ 0.87**. That ~7-point
+  drop is the real-world gap; see [BENCHMARKS.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/BENCHMARKS.md).
+
+### How it compares
+
+This is a **word segmenter**, not a subword tokenizer. It answers "where are
+the word boundaries in this unspaced Khmer text," which is a different job from
+BPE/WordPiece/Unigram/SentencePiece (those learn a subword vocabulary from a
+corpus and are what you feed a transformer). Use this *before* a subword
+tokenizer, not instead of one.
+
+| Tool | Category | Khmer-aware | Ships a model | Reported F1 (Khmer) |
+| --- | --- | --- | --- | --- |
+| SentencePiece / BPE / WordPiece / Unigram | subword | no (byte/char) | trained by you | n/a (different task) |
+| ICU `BreakIterator` (dictionary) | word | yes | yes | dictionary-level |
+| [chamkho](https://github.com/veer66/chamkho) (veer66) | word (dict) | yes | yes | dictionary-level |
+| CRF segmenters (khPOS baselines) | word (statistical) | yes | yes | ~0.90–0.93 |
+| Neural SOTA (e.g. UnifiedCut) | word (neural) | yes | yes | ~0.98 |
+| **khmer-tokenizer (this)** | word (dict + optional perceptron) | yes | **dict only** | **0.75 default / 0.94 self-trained** |
+
+> Competitor F1 figures are as **reported by their authors / papers**, on
+> their own test sets — they are **not** re-measured on the same split as the
+> table above, so treat them as rough placement, not a head-to-head. The
+> honest summary: out of the box this sits at the **dictionary tier**; its
+> algorithmic design (KCC clustering + DP + an optional CRF-class perceptron)
+> is competitive with jieba/PyThaiNLP-style tools, but its *shipped* accuracy
+> trails CRF and neural Khmer segmenters until you train the tagger yourself.
+
+Where it wins today: **zero dependencies, zero model download, deterministic,
+four language targets, and unusually careful Unicode normalization** — a strong
+fit for search/indexing, OCR/text cleanup, and as a reproducible baseline.
+
 ## Project layout
 
 ```text
@@ -142,9 +200,13 @@ khmerTokenizer/
 │   ├── src/lib.rs      #   public API + dictionary helpers
 │   ├── src/kcc.rs      #   Khmer Character Cluster splitting
 │   ├── src/normalize.rs #  orthographic normalization (Phase 5)
-│   ├── src/trie.rs     #   cluster trie + strategies + HMM fallback
+│   ├── src/strategy.rs #   the five segmentation strategies (enum)
+│   ├── src/trie.rs     #   cluster trie + strategies + OOV fallback
+│   ├── src/viterbi.rs  #   shared BMES Viterbi lattice + tags->tokens
 │   ├── src/hmm.rs      #   BMES HMM/Viterbi OOV fallback (Phase 4)
-│   └── src/dict.txt    #   embedded default dictionary
+│   ├── src/tagger.rs   #   averaged-perceptron BMES tagger (CRF-class)
+│   ├── src/dict.txt    #   embedded default dictionary
+│   └── src/dict.supplement.txt # project-authored modern-vocab supplement
 ├── cli/                # khmer-tokenizer-cli — the command-line tool
 │   └── src/main.rs
 ├── py/                 # khmer-tokenizer on PyPI — PyO3/maturin bindings
@@ -188,8 +250,8 @@ let tk = KhmerTokenizer::with_default_dict().with_hmm(my_hmm_model);
 // Or the stronger CRF-class option: train an averaged-perceptron BMES
 // tagger from gold-segmented sentences. As a fallback it upgrades the HMM
 // at the same seam; with Strategy::Tagger it segments everything itself
-// (F1 0.93 vs 0.78 on khPOS — see BENCHMARKS.md). Persist with
-// to_text()/from_text().
+// (F1 0.93 in-domain vs 0.75 shipped default — see the Accuracy section).
+// Persist with to_text()/from_text().
 use khmer_tokenizer_core::TaggerModel;
 let model = TaggerModel::train(&gold_sentences, 5);
 let tk = KhmerTokenizer::with_default_dict().with_tagger(model.clone()); // fallback
@@ -340,9 +402,9 @@ Covers orthographic normalization (marks typed before a subscript, the
 NFC-stranded-mark repair, subscript-RO reordering, within-cluster mark
 order, joiner exemptions, idempotency, byte-length
 preservation — see `core/src/normalize.rs`), ZWSP boundary handling, KCC
-splitting (subscripts and vowels stay attached), all four segmentation
+splitting (subscripts and vowels stay attached), all five segmentation
 strategies (fewest-words DP, forward max-match, bidirectional max-match,
-and unigram DP —
+unigram DP, and the perceptron tagger —
 including a hand-built case where only DP-based scoring can reach the
 correct segmentation), OOV-run grouping, the HMM OOV fallback (a hand-built BMES model that
 resegments an unmatched cluster run while leaving a real dictionary hit
@@ -354,9 +416,11 @@ below a floor. [CI](https://github.com/Alujack/khmer-tokenizer/blob/master/.gith
 
 ## Roadmap
 
-Designed so these slot in without restructuring the workspace:
+See [docs/ROADMAP.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/ROADMAP.md)
+for the full history and [CHANGELOG.md](https://github.com/Alujack/khmer-tokenizer/blob/master/CHANGELOG.md)
+for released changes. Designed so these slot in without restructuring the
+workspace:
 
-- **Benchmarks** — a Criterion suite to track throughput.
 - **A bundleable frequency table** for `UnigramDp` — no commercially-clean,
   bundleable corpus-frequency source has been found yet (see
   [docs/ROADMAP.md](https://github.com/Alujack/khmer-tokenizer/blob/master/docs/ROADMAP.md) Phase 3); until then, callers supply

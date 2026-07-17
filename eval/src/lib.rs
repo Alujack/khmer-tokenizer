@@ -9,7 +9,7 @@ pub mod kh10000b;
 pub mod metrics;
 pub mod tagger;
 
-pub use corpus::{load_khpos_dir, parse_khpos, AltSplit, load_alt_dir, parse_alt, Example};
+pub use corpus::{load_alt_dir, load_khpos_dir, parse_alt, parse_khpos, AltSplit, Example};
 pub use freq::count_frequencies;
 pub use hmm::{train_hmm, HmmCounts};
 pub use metrics::{evaluate, Metrics};

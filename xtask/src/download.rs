@@ -69,7 +69,7 @@ pub fn ensure_alt(data_dir: &Path) -> io::Result<PathBuf> {
 
     std::fs::create_dir_all(&alt_dir)?;
     let zip_path = alt_dir.join("km-nova.zip");
-    
+
     // Download zip using curl
     let status = Command::new("curl")
         .args([

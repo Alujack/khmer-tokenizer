@@ -1,0 +1,43 @@
+# cargo-fuzz targets for khmer-tokenizer-core.
+#
+# Detached from the root workspace (own `[workspace]` table) — libfuzzer-sys
+# needs nightly and a sanitizer, so it must never touch the stable core build
+# or CI. Run (needs `cargo install cargo-fuzz` and a nightly toolchain):
+#   cargo +nightly fuzz run normalize
+#   cargo +nightly fuzz run split_kcc
+#   cargo +nightly fuzz run segment
+[package]
+name = "khmer-tokenizer-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+khmer-tokenizer-core = { path = "../core" }
+
+[[bin]]
+name = "normalize"
+path = "fuzz_targets/normalize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "split_kcc"
+path = "fuzz_targets/split_kcc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "segment"
+path = "fuzz_targets/segment.rs"
+test = false
+doc = false
+bench = false

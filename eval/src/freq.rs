@@ -33,10 +33,7 @@ mod tests {
 
     #[test]
     fn counts_repeated_words_across_examples() {
-        let examples = vec![
-            example(&["សួស្តី", "អ្នក"]),
-            example(&["សួស្តី", "ខ្មែរ"]),
-        ];
+        let examples = vec![example(&["សួស្តី", "អ្នក"]), example(&["សួស្តី", "ខ្មែរ"])];
         let counts = count_frequencies(&examples);
         assert_eq!(counts.get("សួស្តី"), Some(&2));
         assert_eq!(counts.get("អ្នក"), Some(&1));

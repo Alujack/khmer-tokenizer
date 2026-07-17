@@ -1,13 +1,15 @@
-```
-
-```
-
 # Architecture
 
 How `khmer-tokenizer` is put together — the pieces, how data flows through them,
 and how today's simple dictionary engine grows into a data-and-training platform
 without rewrites. Pair this with [LEARNING.md](./LEARNING.md) (what to learn) and
 [ROADMAP.md](./ROADMAP.md) (what to build, in order).
+
+> **Version note:** this document reflects **v0.3**. The default strategy is
+> `MinWordsDp` (fewest-words dynamic programming), out-of-vocabulary runs are
+> grouped into one token by default, and the averaged-perceptron `Tagger`
+> tier is built. Five strategies exist: `MinWordsDp`, `ForwardMaxMatch`,
+> `BiMaxMatch`, `UnigramDp`, `Tagger`.
 
 ## The one idea to hold onto
 
@@ -32,34 +34,41 @@ model training later.
 | Tokenizer API    | `core/src/lib.rs`        | public entry point, dictionary loading       | ✅ built   |
 | CLI              | `cli/src/main.rs`        | run it from the terminal / pipes             | ✅ built   |
 | Normalizer       | `core/src/normalize.rs`  | canonicalize Unicode ordering variants       | ✅ built (Phase 5 — see below) |
-| Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | ✅ built (FMM, BiMM, UnigramDp — see below) |
+| Strategy         | `core/src/strategy.rs`   | pick the boundary algorithm                  | ✅ built (MinWordsDp *(default)*, FMM, BiMM, UnigramDp, Tagger — see below) |
+| Shared Viterbi   | `core/src/viterbi.rs`    | BMES lattice + tags→tokens, shared by HMM and tagger | ✅ built |
 | HMM OOV fallback | `core/src/hmm.rs`      | guess boundaries where the dictionary matched nothing at all | ✅ built (Phase 4 — see below) |
 | Eval harness     | `eval/` + `xtask`      | measure P/R/F1 on a gold corpus              | ✅ built   |
 | Regression guard | `eval/tests/regression.rs` + CI | fail the build if accuracy silently rots | ✅ built (Phase 6 — see below) |
 | Statistical tagger | `core/src/tagger.rs` | CRF-class averaged-perceptron BMES tagger: OOV fallback (`with_tagger`) or full segmenter (`Strategy::Tagger`); no model ships — train + persist your own | ✅ built (F1 0.93 full-mode on khPOS — see BENCHMARKS.md) |
 | Bindings         | `py/` (PyO3), `wasm/`  | run from Python and JS/browser               | ✅ Python on PyPI (`pip install khmer-tokenizer`; release workflow builds all-platform wheels); ✅ WASM on npm (`npm install kh-tokenizer`) |
 
-## Today's default pipeline (`Strategy::ForwardMaxMatch`)
+## Today's default pipeline (`Strategy::MinWordsDp`)
 
 ```mermaid
 flowchart LR
     A[Raw Khmer text] --> N[Normalizer<br/>Phase 5]
     N --> B[KCC splitter]
-    B --> C[Cluster trie<br/>longest match]
-    C --> D[Tokens]
-    E[(dict.txt<br/>embedded)] --> C
+    B --> C[Cluster trie<br/>match DAG]
+    C --> DP[Fewest-words DP<br/>MinWordsDp]
+    DP --> O[OOV run grouping]
+    O --> D[Tokens]
+    E[(dict.txt + supplement<br/>embedded)] --> C
 ```
 
 What happens, in words: the text is first passed through the normalizer
 (`core/src/normalize.rs`, on by default — see below), then split into
 clusters so a base letter never gets cut away from its subscripts/vowels;
-then the segmenter walks a trie built from the dictionary and, at each
-position, takes the longest run of clusters that spells a real word. No
-match → it emits one cluster and moves on. Whitespace and `U+200B` ZERO
-WIDTH SPACE (the Unicode-recommended Khmer word-boundary marker, common as
-an invisible hint in real Khmer web text) act as trusted separators —
-consumed, never emitted, never merged across. Deterministic, no model,
-microsecond-fast.
+then the segmenter builds, for each Khmer letter run, a DAG of *every*
+dictionary word that matches starting at each position and runs a
+fewest-words dynamic program over it (ties broken by dictionary-character
+coverage, then longest word). Unlike a greedy longest-match walk it can
+backtrack, so it never commits to a long first word that strands the rest
+of the run. A maximal run that matches *nothing* in the dictionary is
+emitted as **one out-of-vocabulary token** (the shape of an unknown word),
+not shattered per cluster. Whitespace and `U+200B` ZERO WIDTH SPACE (the
+Unicode-recommended Khmer word-boundary marker, common as an invisible hint
+in real Khmer web text) act as trusted separators — consumed, never
+emitted, never merged across. Deterministic, no model, microsecond-fast.
 
 ## The normalizer (built, Phase 5)
 
@@ -108,11 +117,13 @@ change while the *what* stays stable:
 ```mermaid
 flowchart TB
     IN[clusters] --> S{Strategy}
-    S -->|default| FM[Forward max-match]
+    S -->|default| MW[Fewest-words DP<br/>MinWordsDp]
+    S -->|ForwardMaxMatch| FM[Forward max-match]
     S -->|BiMaxMatch| BM[Bidirectional max-match]
     S -->|UnigramDp| DP[Unigram max-probability path]
-    S -->|future| ML[Trained CRF / neural model]
-    FM --> OUT[tokens]
+    S -->|Tagger| ML[Averaged-perceptron<br/>BMES tagger]
+    MW --> OUT[tokens]
+    FM --> OUT
     BM --> OUT
     DP --> OUT
     ML --> OUT
@@ -121,20 +132,23 @@ flowchart TB
 ```rust
 // The seam: callers never change, the engine behind it can.
 pub enum Strategy {
-    ForwardMaxMatch,   // default (determinism/speed) — always available
-    BiMaxMatch,        // cheap accuracy bump, no extra data needed
-    UnigramDp,         // best of the three, but needs KhmerTokenizer::with_frequencies(...) —
-                        // no frequency table ships with the crate (see BENCHMARKS.md Phase 3)
-    // Model(Box<dyn Segmenter>) // future — a trained model, same API
+    ForwardMaxMatch,   // greedy longest-match — the v0.2 default; fastest
+    MinWordsDp,        // fewest-words DP over the match DAG — the v0.3 DEFAULT;
+                       //   backtracks, needs no data beyond the dictionary
+    BiMaxMatch,        // bidirectional max-match with a fewer-tokens tie-break
+    UnigramDp,         // max-probability DAG path — needs with_frequencies(...);
+                       //   no frequency table ships with the crate
+    Tagger,            // full averaged-perceptron BMES tagging, ignores the dict;
+                       //   needs with_tagger(...) — no model ships with the crate
 }
 ```
 
 A user who writes `tokenizer.segment(text)` doesn't need to change anything
 when switching strategies — `KhmerTokenizer::with_strategy(Strategy::BiMaxMatch)`
-chains onto any constructor, and the CLI exposes all four strategies the
-same way via `--strategy fmm|bimm|unigram|tagger`, with `--dict`, `--freq`,
-and `--tagger` flags to load the data the stronger tiers require (a model
-file is produced locally by `cargo xtask train-tagger`).
+chains onto any constructor, and the CLI exposes all five strategies the
+same way via `--strategy minwords|fmm|bimm|unigram|tagger`, with `--dict`,
+`--freq`, and `--tagger` flags to load the data the stronger tiers require (a
+model file is produced locally by `cargo xtask train-tagger`).
 
 `UnigramDp`'s DAG-plus-DP approach is a real algorithmic step up from the
 other two, not just a variant: `greedy_match` (used by both FMM and BiMM)
@@ -146,10 +160,11 @@ that DAG picks the path with the highest cumulative log-probability. That
 structural difference is why it measurably outperforms BiMM in
 `docs/BENCHMARKS.md`, not just a better tie-break rule.
 
-A user who writes `tokenizer.segment(text)` today keeps working when you later
-drop in a trained model. That stability is what lets you experiment freely.
+A user who writes `tokenizer.segment(text)` keeps working across every
+strategy, including the trained `Tagger`. That stability is what lets you
+experiment freely.
 
-## The HMM OOV fallback (built, Phase 4)
+## The OOV fallback (built, Phase 4 + v0.3)
 
 Every strategy above shares one blind spot: when a run of clusters matches
 *nothing* in the dictionary, they all fall back to one token per cluster —
@@ -174,21 +189,26 @@ flowchart LR
     OUT --> OUT2
 ```
 
-Concretely (`trie.rs`'s `apply_hmm_fallback` + `is_dict_word`): scan the
+Concretely (`trie.rs`'s `apply_oov_fallback` + `is_dict_word`): scan the
 strategy's token output; any *maximal run* of single-cluster tokens that
-aren't themselves dictionary entries gets buffered and handed to
-`HmmModel::segment_oov`, which Viterbi-decodes the most likely BMES
-(Begin/Middle/End/Single) tag sequence and converts it to token boundaries.
-Every other token — including genuine single-cluster dictionary words —
-passes through untouched. That untouched-ness is why it composed cleanly
-with both `ForwardMaxMatch` and `UnigramDp` with **zero measured R-iv
-cost** (see `docs/BENCHMARKS.md` Phase 4): it structurally cannot affect a
-token the trie walk already matched.
+aren't themselves dictionary entries gets buffered and re-segmented. The
+re-segmenter is pluggable, and the precedence is: an attached
+`TaggerModel` (preferred), else an attached `HmmModel`, else — the v0.3
+default with no model — **group the whole run into one token** (a name or
+loanword is far more often one unknown word than a string of one-cluster
+words; this measurably improves both F1 and word accuracy, see
+`docs/BENCHMARKS.md`). A model's `segment_oov`/`segment_clusters`
+Viterbi-decodes the most likely BMES (Begin/Middle/End/Single) tag sequence
+and converts it to token boundaries. Every other token — including genuine
+single-cluster dictionary words — passes through untouched. That
+untouched-ness is why it composes cleanly with every dictionary strategy at
+**zero measured R-iv cost** (see `docs/BENCHMARKS.md` Phase 4): it
+structurally cannot affect a token the trie walk already matched.
 
-Same posture as `UnigramDp`'s frequencies: no trained `HmmModel` ships with
-the crate (see `core/ATTRIBUTION.md`) — callers build one with
-`HmmModel::from_counts(...)` from a segmented corpus they're licensed to
-use.
+Same posture as `UnigramDp`'s frequencies: no trained `HmmModel` or
+`TaggerModel` ships with the crate (see `core/ATTRIBUTION.md`) — callers
+build one with `HmmModel::from_counts(...)` or `TaggerModel::train(...)`
+from a segmented corpus they're licensed to use.
 
 ## The regression guard (built, Phase 6)
 
@@ -286,7 +306,7 @@ front-end that makes a future Khmer foundation model's tokenizer clean.
 
 ```text
 khmerTokenizer/
-├── core/      # kcc, normalize, trie, strategy, hmm  (std-only, all built)
+├── core/      # kcc, normalize, trie, strategy, viterbi, hmm, tagger (std-only, all built)
 ├── cli/       # terminal tool (+ --strategy, --tags)
 ├── eval/      # P/R/F1 harness over a gold corpus
 ├── xtask/     # download corpora, prepare dict, run eval

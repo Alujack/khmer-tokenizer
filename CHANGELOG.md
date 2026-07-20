@@ -15,6 +15,13 @@ The workspace crates (`khmer-tokenizer-core`, `khmer-tokenizer-cli`) and the
 ## [Unreleased]
 
 ### Added
+- **Optional high-accuracy model tier**, documented and made first-class
+  without contaminating the permissive crate: a README "High-accuracy model"
+  section, `models/README.md`, and a manual `model.yml` workflow that trains
+  the tagger and publishes it as a **separate CC BY-NC-SA 4.0 release asset**
+  (the code stays MIT/Apache; the model — derived from the only available,
+  non-commercial Khmer corpora — is distributed separately with attribution).
+  `.model` files are now git-ignored to prevent accidentally committing one.
 - `docs/` comparison table and an **Accuracy** section in the README stating,
   with reproduced numbers, where the tokenizer sits versus CRF/neural tools.
 - `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and

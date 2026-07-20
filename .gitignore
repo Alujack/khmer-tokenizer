@@ -31,3 +31,9 @@ docs/*.docx
 
 # Downloaded corpora — CC BY-NC-SA (khPOS etc.), evaluation-only, never bundled
 /data/
+
+# Trained tagger models — derived from CC BY-NC-SA corpora, non-commercial,
+# never committed (see models/README.md). Keep models/README.md itself.
+*.model
+/models/*
+!/models/README.md

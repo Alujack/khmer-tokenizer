@@ -1,0 +1,63 @@
+name: Train & publish tagger model
+
+# Trains the optional high-accuracy BMES tagger and publishes it as a release
+# asset. MANUAL ONLY (workflow_dispatch) — the model is derived from a
+# CC BY-NC-SA corpus (khPOS/ALT), so it is NOT bundled in the crate and its
+# distribution is a deliberate, maintainer-triggered, non-commercial act.
+#
+# The published model inherits CC BY-NC-SA 4.0 (see models/README.md); a
+# LICENSE note is uploaded alongside it. Provide `tag` to attach the model to
+# an existing GitHub Release; otherwise it is uploaded only as a workflow
+# artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      corpus:
+        description: "Training corpus"
+        type: choice
+        options: [khpos, alt]
+        default: khpos
+      tag:
+        description: "Release tag to attach the model to (blank = artifact only)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write # to attach the asset to a release
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Train the tagger (downloads the CC BY-NC-SA corpus for training)
+        run: |
+          FLAG=""
+          [ "${{ inputs.corpus }}" = "alt" ] && FLAG="--alt"
+          cargo run --release -p xtask -- train-tagger $FLAG kh-tagger.model
+      - name: Write the model's license note
+        run: |
+          cat > kh-tagger.model.LICENSE.txt <<'EOF'
+          khmer-tokenizer tagger model — CC BY-NC-SA 4.0 (NON-COMMERCIAL).
+          Derived from a CC BY-NC-SA 4.0 corpus (khPOS © Ye Kyaw Thu et al., or
+          the Khmer ALT Treebank © NICT/NIPTICT). You may use and redistribute
+          this model for non-commercial purposes only, with attribution, under
+          CC BY-NC-SA 4.0. See models/README.md. The khmer-tokenizer *code* is
+          MIT/Apache-2.0 and is unaffected by this model's license.
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kh-tagger-model-${{ inputs.corpus }}
+          path: |
+            kh-tagger.model
+            kh-tagger.model.LICENSE.txt
+      - name: Attach to release (if a tag was given)
+        if: ${{ inputs.tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: |
+            kh-tagger.model
+            kh-tagger.model.LICENSE.txt

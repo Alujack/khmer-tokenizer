@@ -191,6 +191,56 @@ Where it wins today: **zero dependencies, zero model download, deterministic,
 four language targets, and unusually careful Unicode normalization** — a strong
 fit for search/indexing, OCR/text cleanup, and as a reproducible baseline.
 
+## High-accuracy model (optional, CC BY-NC-SA)
+
+The dictionary tiers top out around **F1 0.75** because they are bounded by the
+dictionary. The averaged-perceptron `Tagger` reaches **F1 ≈ 0.94 in-domain**
+(≈ 0.87 cross-corpus) — but it must be *trained*, and **no trained model ships
+inside this crate.** That is not an oversight: the only word-segmented Khmer
+gold corpora that exist (khPOS, the ALT Khmer Treebank) are both
+**CC BY-NC-SA 4.0 — non-commercial**, so a model trained on them cannot be
+relicensed under this project's permissive MIT/Apache license and bundled.
+
+The standard NLP answer applies here: **the code is MIT/Apache, and the model
+is a separate CC BY-NC-SA artifact you obtain yourself.** Two ways:
+
+```bash
+# 1. Train one locally in seconds from a corpus you're licensed to use.
+#    (Downloads khPOS for your own non-commercial use; the model inherits
+#    khPOS's CC BY-NC-SA license — see models/README.md.)
+cargo xtask train-tagger kh-tagger.model
+
+# 2. ...or download a pre-trained model from the GitHub Releases page
+#    (published under CC BY-NC-SA 4.0, with attribution — non-commercial use).
+```
+
+Then load it — same model, every surface:
+
+```bash
+# CLI: full tagger segmentation
+khmer-tokenizer --strategy tagger --tagger kh-tagger.model "ខ្ញុំរៀនភាសាខ្មែរ"
+# or as an OOV fallback on top of a dictionary strategy (omit --strategy tagger)
+khmer-tokenizer --tagger kh-tagger.model "ខ្ញុំរៀនភាសាខ្មែរ"
+```
+
+```rust
+use khmer_tokenizer_core::{KhmerTokenizer, Strategy, TaggerModel};
+let model = TaggerModel::from_text(&std::fs::read_to_string("kh-tagger.model")?)?;
+let tk = KhmerTokenizer::empty().with_strategy(Strategy::Tagger).with_tagger(model);
+```
+
+```python
+from khmer_tokenizer import KhmerTokenizer
+tk = KhmerTokenizer(strategy="tagger", tagger=open("kh-tagger.model").read())
+```
+
+**Commercial use:** the CC BY-NC-SA model is off-limits for commercial products.
+For those you need a model trained on a corpus *you* are licensed to use
+commercially — the same `TaggerModel::train` / `cargo xtask train-tagger` path,
+pointed at your own data. Raising the *permissive, ships-in-the-box* accuracy
+above the dictionary tier is blocked on the existence of a permissively-licensed
+segmented Khmer corpus, which (as of this writing) does not exist.
+
 ## Project layout
 
 ```text
